@@ -106,74 +106,90 @@ export function generarRecomendaciones({ objetivo, nivel, semanasCiclo, registro
 
 // ── Sugerencia de peso/carga para un ejercicio ────────────────────────────────
 function calcularSugerenciaEjercicio(ej, registros, prog, params) {
-  if (!registros[ej.id]) return { pesoSugerido: null, estado: 'sin_datos', mensaje: 'Sin historial aún' }
+  const ejReg = registros[ej.id]
+  const historialRaw = ejReg
+    ? Object.entries(ejReg).sort(([a], [b]) => fechaADate(a) - fechaADate(b))
+    : []
 
-  const historial = Object.entries(registros[ej.id])
-    .sort(([a], [b]) => fechaADate(a) - fechaADate(b))
+  // Construir historial reciente para mostrar en UI (últimas 4 sesiones)
+  const historialReciente = historialRaw.slice(-4).map(([fecha, series]) => {
+    if (ej.tipo === 'peso' || ej.tipo === 'kg') {
+      const kg = Number(series.s1) || null
+      return { fecha, display: kg ? `${kg}kg` : '-' , valor: kg }
+    }
+    if (ej.tipo === 'peso_reps') {
+      const [kg, reps] = (series.s1 || '').split('|')
+      return { fecha, display: kg && reps ? `${kg}kg×${reps}` : '-', valor: Number(kg) || null }
+    }
+    if (ej.tipo === 'reps') {
+      const r = Number(series.s1) || null
+      return { fecha, display: r ? `${r} reps` : '-', valor: r }
+    }
+    if (ej.tipo === 'tiempo') {
+      const s = Number(series.s1) || null
+      return { fecha, display: s ? `${s}s` : '-', valor: s }
+    }
+    return { fecha, display: '-', valor: null }
+  })
 
-  if (historial.length < 2) return { pesoSugerido: null, estado: 'sin_datos', mensaje: 'Necesitas más sesiones' }
+  const sinDatos = { pesoSugerido: null, estado: 'sin_datos', mensaje: null, historialReciente }
 
-  const ultimasSesiones = historial.slice(-6)
+  if (historialRaw.length < 1) return sinDatos
+
   const esCompuesto = COMPUESTOS.includes(ej.musculo)
   const incremento = esCompuesto ? prog.compuestos : prog.aislamientos
+  const ultimaSesion = historialRaw.at(-1)?.[1]
 
-  // Obtener el mejor peso de la última sesión (serie 1)
-  const ultimaSesion = ultimasSesiones.at(-1)?.[1]
-  const penultimaSesion = ultimasSesiones.at(-2)?.[1]
+  // ── Ejercicios con peso libre (peso y kg son equivalentes) ──────────────────
+  if (ej.tipo === 'peso' || ej.tipo === 'kg') {
+    const ultimoPeso = Number(ultimaSesion?.s1) || 0
+    if (!ultimoPeso) return { ...sinDatos, mensaje: null }
 
+    const estancado = historialRaw.length >= 3 && detectarEstancamiento(historialRaw, 'kg')
+    if (estancado) {
+      return { pesoSugerido: ultimoPeso, estado: 'estancado', mensaje: `Sin progreso reciente. Intenta ${ultimoPeso}kg con mejor técnica.`, historialReciente }
+    }
+    const nuevoPeso = +(ultimoPeso + incremento).toFixed(2)
+    return { pesoSugerido: nuevoPeso, estado: 'subir_peso', mensaje: `Sube a ${nuevoPeso}kg esta sesión`, historialReciente }
+  }
+
+  // ── Peso + reps (doble progresión) ──────────────────────────────────────────
   if (ej.tipo === 'peso_reps') {
     const ultimoPeso = Number(ultimaSesion?.s1?.split('|')[0]) || 0
     const ultimasReps = Number(ultimaSesion?.s1?.split('|')[1]) || 0
-    const penultimoPeso = Number(penultimaSesion?.s1?.split('|')[0]) || 0
+    if (!ultimoPeso) return { ...sinDatos, mensaje: null }
 
-    if (!ultimoPeso) return { pesoSugerido: null, estado: 'sin_datos', mensaje: 'Registra pesos primero' }
+    const [repsMin, repsMax] = String(params.reps).includes('-')
+      ? params.reps.split('-').map(Number)
+      : [Number(params.reps) - 2, Number(params.reps)]
 
-    const [repsMin, repsMax] = params.reps.split('-').map(Number)
-    const estancado = detectarEstancamiento(historial, ej.tipo)
-
+    const estancado = historialRaw.length >= 3 && detectarEstancamiento(historialRaw, ej.tipo)
     if (estancado) {
-      return {
-        pesoSugerido: ultimoPeso,
-        estado: 'estancado',
-        mensaje: `⚠️ Sin progreso ${prog.semanasParaSubir * 2}+ semanas. Considera técnica o cambiar ejercicio.`,
-      }
+      return { pesoSugerido: ultimoPeso, estado: 'estancado', mensaje: `Sin progreso reciente. Intenta mejorar la técnica o cambia el ejercicio.`, historialReciente }
     }
-
     if (ultimasReps >= repsMax) {
-      // Doble progresión: llegó al tope de reps → sube peso, baja a repsMin
       const nuevoPeso = +(ultimoPeso + incremento).toFixed(2)
-      return {
-        pesoSugerido: nuevoPeso,
-        estado: 'subir_peso',
-        mensaje: `✅ ${repsMax} reps alcanzadas → Sube a ${nuevoPeso}kg`,
-      }
+      return { pesoSugerido: nuevoPeso, estado: 'subir_peso', repsObjetivo: repsMin, mensaje: `¡${repsMax} reps! → Sube a ${nuevoPeso}kg y apunta a ${repsMin} reps`, historialReciente }
     }
-
-    return {
-      pesoSugerido: ultimoPeso,
-      estado: 'mantener',
-      mensaje: `Intenta superar ${ultimasReps} reps con ${ultimoPeso}kg`,
-    }
+    return { pesoSugerido: ultimoPeso, estado: 'mantener', repsObjetivo: ultimasReps + 1, mensaje: `Mismo peso (${ultimoPeso}kg), intenta ${ultimasReps + 1} reps`, historialReciente }
   }
 
-  if (ej.tipo === 'kg') {
-    const ultimoPeso = Number(ultimaSesion?.s1) || 0
-    if (!ultimoPeso) return { pesoSugerido: null, estado: 'sin_datos', mensaje: 'Registra pesos primero' }
-
-    const estancado = detectarEstancamiento(historial, ej.tipo)
-    if (estancado) {
-      return { pesoSugerido: ultimoPeso, estado: 'estancado', mensaje: '⚠️ Sin progreso. Revisa técnica o cambia ejercicio.' }
-    }
-
-    const nuevoPeso = +(ultimoPeso + incremento).toFixed(2)
-    return {
-      pesoSugerido: nuevoPeso,
-      estado: 'subir_peso',
-      mensaje: `↑ Prueba ${nuevoPeso}kg esta sesión`,
-    }
+  // ── Solo reps ────────────────────────────────────────────────────────────────
+  if (ej.tipo === 'reps') {
+    const ultimasReps = Number(ultimaSesion?.s1) || 0
+    if (!ultimasReps) return sinDatos
+    return { pesoSugerido: null, estado: 'mantener', repsObjetivo: ultimasReps + prog.repsParaSubir, mensaje: `Intenta ${ultimasReps + prog.repsParaSubir} reps (último: ${ultimasReps})`, historialReciente }
   }
 
-  return { pesoSugerido: null, estado: 'ok', mensaje: null }
+  // ── Tiempo ───────────────────────────────────────────────────────────────────
+  if (ej.tipo === 'tiempo') {
+    const ultimoTiempo = Number(ultimaSesion?.s1) || 0
+    if (!ultimoTiempo) return sinDatos
+    const objetivo = ultimoTiempo + 5
+    return { pesoSugerido: null, estado: 'mantener', mensaje: `Intenta aguantar ${objetivo}s (último: ${ultimoTiempo}s)`, historialReciente }
+  }
+
+  return sinDatos
 }
 
 // ── Detectar estancamiento (2+ sesiones sin mejora) ──────────────────────────

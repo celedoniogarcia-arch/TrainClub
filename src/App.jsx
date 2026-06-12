@@ -345,6 +345,23 @@ export default function App() {
     return max || null
   }
 
+  function aplicarSugerencia(ej, sug, series) {
+    const hoy = new Date().toLocaleDateString('es-ES')
+    const r = JSON.parse(JSON.stringify(registros))
+    if (!r[ej.id]) r[ej.id] = {}
+    if (!r[ej.id][hoy]) r[ej.id][hoy] = {}
+    for (let s = 1; s <= series; s++) {
+      if (ej.tipo === 'peso' || ej.tipo === 'kg') {
+        r[ej.id][hoy][`s${s}`] = String(sug.pesoSugerido)
+      } else if (ej.tipo === 'peso_reps') {
+        r[ej.id][hoy][`s${s}`] = `${sug.pesoSugerido}|${sug.repsObjetivo || ''}`
+      } else if (ej.tipo === 'reps') {
+        r[ej.id][hoy][`s${s}`] = String(sug.repsObjetivo || '')
+      }
+    }
+    setUd({ ...ud, registros: r })
+  }
+
   // ── Peso corporal ──
   const histPeso = ud.histPeso || []
   function addPeso() {
@@ -727,15 +744,50 @@ export default function App() {
                         ))}
                       </div>
 
-                      {/* Sugerencia del motor de reglas */}
+                      {/* Panel de progresión guiada */}
                       {(() => {
                         const sug = reglas.recomendaciones[ej.id]
-                        if (!sug || !sug.mensaje) return null
-                        const color = sug.estado === 'subir_peso' ? '#10b981' : sug.estado === 'estancado' ? '#f97316' : '#6366f1'
-                        const bg = sug.estado === 'subir_peso' ? '#f0fdf4' : sug.estado === 'estancado' ? '#fff7ed' : '#eef2ff'
+                        if (!sug) return null
+                        const colorMap = { subir_peso: '#10b981', estancado: '#f97316', mantener: '#6366f1', sin_datos: '#8e8e93' }
+                        const bgMap = { subir_peso: '#f0fdf4', estancado: '#fff7ed', mantener: '#eef2ff', sin_datos: '#f5f5f7' }
+                        const color = colorMap[sug.estado] || '#8e8e93'
+                        const bg = bgMap[sug.estado] || '#f5f5f7'
+                        const puedeAplicar = (sug.pesoSugerido || sug.repsObjetivo) && sug.estado !== 'sin_datos'
                         return (
-                          <div style={{ background: bg, borderRadius: 10, padding: '8px 12px', marginBottom: 14, fontSize: 12, color, fontWeight: 600 }}>
-                            {sug.mensaje}
+                          <div style={{ marginBottom: 14 }}>
+                            {/* Sugerencia principal */}
+                            {sug.mensaje && (
+                              <div style={{ background: bg, borderRadius: 10, padding: '10px 12px', marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ fontSize: 10, fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>
+                                    {sug.estado === 'subir_peso' ? '🚀 Sube de peso' : sug.estado === 'estancado' ? '⚠️ Estancamiento' : '🎯 Objetivo sesión'}
+                                  </div>
+                                  <div style={{ fontSize: 13, fontWeight: 700, color: '#1c1c1e' }}>{sug.mensaje}</div>
+                                </div>
+                                {puedeAplicar && (
+                                  <button onClick={() => aplicarSugerencia(ej, sug, seriesEfectivas)}
+                                    style={{ flexShrink: 0, padding: '7px 12px', borderRadius: 10, border: 'none', background: color, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                                    Usar ↗
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                            {/* Mini historial últimas sesiones */}
+                            {sug.historialReciente?.length > 0 && (
+                              <div style={{ display: 'flex', gap: 6 }}>
+                                {sug.historialReciente.map((h, i) => {
+                                  const isLast = i === sug.historialReciente.length - 1
+                                  const isBetter = i > 0 && h.valor > sug.historialReciente[i - 1].valor
+                                  return (
+                                    <div key={i} style={{ flex: 1, background: isLast ? '#f0fdf4' : '#f5f5f7', borderRadius: 8, padding: '5px 6px', textAlign: 'center', border: isLast ? '1px solid #10b981' : '1px solid transparent' }}>
+                                      <div style={{ fontSize: 9, color: '#8e8e93', marginBottom: 2 }}>{h.fecha.split('/').slice(0,2).join('/')}</div>
+                                      <div style={{ fontSize: 12, fontWeight: 700, color: isLast ? '#10b981' : '#1c1c1e' }}>{h.display}</div>
+                                      {isBetter && <div style={{ fontSize: 8, color: '#10b981' }}>▲</div>}
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
                           </div>
                         )
                       })()}
