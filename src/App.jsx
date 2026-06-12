@@ -669,6 +669,9 @@ export default function App() {
               const open = ejAbierto === ej.id
               const altOpen = altAbierta === ej.id
               const altActiva = alternativasActivas[ej.id]
+              // Series efectivas = series del ciclo + extras añadidos por correcciones
+              const seriesExtra = (ud.seriesExtra || {})[ej.musculo] || 0
+              const seriesEfectivas = ej.series + seriesExtra
               // El ejercicio a mostrar puede ser el original o una alternativa seleccionada
               const ejMostrado = altActiva ? { ...ej, nombre: altActiva.nombre, gif: altActiva.gif, musculo: altActiva.musculo } : ej
               const max = getMaxValor(ej.id, ej.tipo)
@@ -687,7 +690,7 @@ export default function App() {
                       <div style={{ fontSize: 12, color: '#8e8e93', marginTop: 2 }}>{ejMostrado.musculo}</div>
                     </div>
                     <div style={{ textAlign: 'right', marginRight: 6 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: cicloInfo.color }}>{ej.series}×{ej.tipo === 'tiempo' ? `${ej.reps}s` : ej.reps}</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: cicloInfo.color }}>{seriesEfectivas}×{ej.tipo === 'tiempo' ? `${ej.reps}s` : ej.reps}</div>
                       {etiquetaMax && <div style={{ fontSize: 11, color: '#8e8e93' }}>{etiquetaMax}</div>}
                     </div>
                     <span style={{ color: '#c7c7cc', fontSize: 11 }}>{open ? '▲' : '▼'}</span>
@@ -707,7 +710,7 @@ export default function App() {
                       </div>
 
                       <div style={{ background: cicloInfo.bg, borderRadius: 10, padding: '10px 12px', marginBottom: 14 }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: cicloInfo.color, marginBottom: 3 }}>{cicloInfo.nombre}: {ej.series} series × {ej.tipo === 'tiempo' ? `${ej.reps} seg` : ej.reps}</div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: cicloInfo.color, marginBottom: 3 }}>{cicloInfo.nombre}: {seriesEfectivas} series × {ej.tipo === 'tiempo' ? `${ej.reps} seg` : ej.reps}{seriesExtra > 0 ? ` (+${seriesExtra} extra)` : ''}</div>
                         <div style={{ fontSize: 12, color: '#3c3c43', lineHeight: 1.4 }}>{ej.tip}</div>
                         {esDeload && <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, fontWeight: 600 }}>⚡ Deload: usa ~50% de tu peso habitual</div>}
                       </div>
@@ -715,8 +718,8 @@ export default function App() {
                       <div style={{ fontSize: 13, fontWeight: 600, color: '#3c3c43', marginBottom: 10 }}>
                         {ej.tipo === 'tiempo' ? 'Tiempo (seg) por serie:' : ej.tipo === 'reps' ? 'Repeticiones por serie:' : ej.tipo === 'peso_reps' ? 'Peso (kg) y reps por serie:' : 'Peso (kg) por serie:'}
                       </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(ej.series, ej.tipo === 'peso_reps' ? 2 : 4)}, 1fr)`, gap: 8, marginBottom: 10 }}>
-                        {Array.from({ length: ej.series }, (_, i) => i + 1).map(s => (
+                      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(seriesEfectivas, ej.tipo === 'peso_reps' ? 2 : 4)}, 1fr)`, gap: 8, marginBottom: 10 }}>
+                        {Array.from({ length: seriesEfectivas }, (_, i) => i + 1).map(s => (
                           <EjercicioInput key={s} ej={ej} serie={s}
                             valor={getValorHoy(ej.id, s)}
                             onChange={v => setValorEj(ej.id, s, v)}
