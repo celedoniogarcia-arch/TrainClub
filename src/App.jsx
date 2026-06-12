@@ -1,16 +1,8 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { CICLOS, PLATOS, AVATARS, getDiasCiclo } from './data.js'
+import { getProfiles, upsertProfile, deleteProfile, getUserData, saveUserData, getDieta, saveDieta } from './db.js'
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
-
-function useLS(key, init) {
-  const [val, setVal] = useState(() => {
-    try { const s = localStorage.getItem(key); return s ? JSON.parse(s) : init }
-    catch { return init }
-  })
-  const save = v => { setVal(v); try { localStorage.setItem(key, JSON.stringify(v)) } catch {} }
-  return [val, save]
-}
 
 function getWeekKey(d = new Date()) {
   const start = new Date(d.getFullYear(), 0, 1)
@@ -18,22 +10,17 @@ function getWeekKey(d = new Date()) {
   return `${d.getFullYear()}-W${String(week).padStart(2, '0')}`
 }
 
-// Devuelve los 7 días de la semana actual (lun–dom) con fecha real
 function getSemanaActual() {
   const hoy = new Date()
-  const diaSemana = hoy.getDay() // 0=dom,1=lun...6=sab
+  const dow = hoy.getDay()
   const lunes = new Date(hoy)
-  lunes.setDate(hoy.getDate() - ((diaSemana + 6) % 7)) // retroceder al lunes
+  lunes.setDate(hoy.getDate() - ((dow + 6) % 7))
   return Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(lunes)
-    d.setDate(lunes.getDate() + i)
-    return d
+    const d = new Date(lunes); d.setDate(lunes.getDate() + i); return d
   })
 }
 
 const DIAS_SEMANA_LABEL = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
-// Mapeo índice semana (0=lun…4=vie) → índice en DIAS[]
-const DIA_IDX_MAP = [0, 1, 2, 3, 4] // lun→0, mar→1, mié→2, jue→3, vie→4
 
 const S = {
   page: { maxWidth: 430, margin: '0 auto', minHeight: '100dvh', background: '#f5f5f7', paddingBottom: 84 },
@@ -46,41 +33,34 @@ const S = {
   nav: { position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 430, background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px)', borderTop: '1px solid #e5e5ea', display: 'flex', paddingBottom: 'env(safe-area-inset-bottom,0px)' },
 }
 
-// ─── INPUT DE EJERCICIO (peso / tiempo / reps / peso_reps) ───────────────────
+// ─── INPUT DE EJERCICIO ──────────────────────────────────────────────────────
 
 function EjercicioInput({ ej, serie, valor, onChange, ultimoValor }) {
   const { tipo, reps } = ej
   const esDeload = String(reps).includes('deload')
+  const inputStyle = { ...S.input, textAlign: 'center', padding: '10px 8px', fontSize: 17, fontWeight: 700 }
 
-  if (tipo === 'tiempo') {
-    return (
-      <div>
-        <div style={{ fontSize: 11, color: '#8e8e93', marginBottom: 4, textAlign: 'center' }}>Serie {serie}</div>
-        <div style={{ position: 'relative' }}>
-          <input type="number" inputMode="numeric" placeholder={reps}
-            value={valor} onChange={e => onChange(e.target.value)}
-            style={{ ...S.input, textAlign: 'center', padding: '10px 8px', fontSize: 16, fontWeight: 700 }} />
-          <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 10, color: '#8e8e93' }}>seg</span>
-        </div>
-        {ultimoValor && <div style={{ fontSize: 10, color: '#8e8e93', textAlign: 'center', marginTop: 2 }}>último: {ultimoValor}s</div>}
+  if (tipo === 'tiempo') return (
+    <div>
+      <div style={{ fontSize: 11, color: '#8e8e93', marginBottom: 4, textAlign: 'center' }}>Serie {serie}</div>
+      <div style={{ position: 'relative' }}>
+        <input type="number" inputMode="numeric" placeholder={reps} value={valor} onChange={e => onChange(e.target.value)} style={inputStyle} />
+        <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 10, color: '#8e8e93' }}>seg</span>
       </div>
-    )
-  }
+      {ultimoValor && <div style={{ fontSize: 10, color: '#8e8e93', textAlign: 'center', marginTop: 2 }}>último: {ultimoValor}s</div>}
+    </div>
+  )
 
-  if (tipo === 'reps') {
-    return (
-      <div>
-        <div style={{ fontSize: 11, color: '#8e8e93', marginBottom: 4, textAlign: 'center' }}>Serie {serie}</div>
-        <div style={{ position: 'relative' }}>
-          <input type="number" inputMode="numeric" placeholder={reps}
-            value={valor} onChange={e => onChange(e.target.value)}
-            style={{ ...S.input, textAlign: 'center', padding: '10px 8px', fontSize: 16, fontWeight: 700 }} />
-          <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 10, color: '#8e8e93' }}>reps</span>
-        </div>
-        {ultimoValor && <div style={{ fontSize: 10, color: '#8e8e93', textAlign: 'center', marginTop: 2 }}>último: {ultimoValor} reps</div>}
+  if (tipo === 'reps') return (
+    <div>
+      <div style={{ fontSize: 11, color: '#8e8e93', marginBottom: 4, textAlign: 'center' }}>Serie {serie}</div>
+      <div style={{ position: 'relative' }}>
+        <input type="number" inputMode="numeric" placeholder={reps} value={valor} onChange={e => onChange(e.target.value)} style={inputStyle} />
+        <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 10, color: '#8e8e93' }}>reps</span>
       </div>
-    )
-  }
+      {ultimoValor && <div style={{ fontSize: 10, color: '#8e8e93', textAlign: 'center', marginTop: 2 }}>último: {ultimoValor} reps</div>}
+    </div>
+  )
 
   if (tipo === 'peso_reps') {
     const [kg, repsVal] = (valor || '').split('|')
@@ -89,15 +69,11 @@ function EjercicioInput({ ej, serie, valor, onChange, ultimoValor }) {
         <div style={{ fontSize: 11, color: '#8e8e93', marginBottom: 4, textAlign: 'center' }}>Serie {serie}</div>
         <div style={{ display: 'flex', gap: 4 }}>
           <div style={{ position: 'relative', flex: 1 }}>
-            <input type="number" inputMode="decimal" placeholder="0"
-              value={kg || ''} onChange={e => onChange(`${e.target.value}|${repsVal || ''}`)}
-              style={{ ...S.input, textAlign: 'center', padding: '10px 4px', fontSize: 14, fontWeight: 700 }} />
+            <input type="number" inputMode="decimal" placeholder="0" value={kg || ''} onChange={e => onChange(`${e.target.value}|${repsVal || ''}`)} style={{ ...inputStyle, fontSize: 14 }} />
             <span style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', fontSize: 9, color: '#8e8e93' }}>kg</span>
           </div>
           <div style={{ position: 'relative', flex: 1 }}>
-            <input type="number" inputMode="numeric" placeholder={reps}
-              value={repsVal || ''} onChange={e => onChange(`${kg || ''}|${e.target.value}`)}
-              style={{ ...S.input, textAlign: 'center', padding: '10px 4px', fontSize: 14, fontWeight: 700 }} />
+            <input type="number" inputMode="numeric" placeholder={reps} value={repsVal || ''} onChange={e => onChange(`${kg || ''}|${e.target.value}`)} style={{ ...inputStyle, fontSize: 14 }} />
             <span style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', fontSize: 9, color: '#8e8e93' }}>reps</span>
           </div>
         </div>
@@ -106,14 +82,11 @@ function EjercicioInput({ ej, serie, valor, onChange, ultimoValor }) {
     )
   }
 
-  // tipo === 'peso' (default)
   return (
     <div>
       <div style={{ fontSize: 11, color: '#8e8e93', marginBottom: 4, textAlign: 'center' }}>Serie {serie}</div>
       <div style={{ position: 'relative' }}>
-        <input type="number" inputMode="decimal" placeholder={esDeload && ultimoValor ? `~${Math.round(Number(ultimoValor) * 0.5)}` : 'kg'}
-          value={valor} onChange={e => onChange(e.target.value)}
-          style={{ ...S.input, textAlign: 'center', padding: '10px 8px', fontSize: 18, fontWeight: 700 }} />
+        <input type="number" inputMode="decimal" placeholder={esDeload && ultimoValor ? `~${Math.round(Number(ultimoValor) * 0.5)}` : 'kg'} value={valor} onChange={e => onChange(e.target.value)} style={inputStyle} />
         <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 10, color: '#8e8e93' }}>kg</span>
       </div>
       {ultimoValor && <div style={{ fontSize: 10, color: '#8e8e93', textAlign: 'center', marginTop: 2 }}>último: {ultimoValor}kg</div>}
@@ -121,9 +94,9 @@ function EjercicioInput({ ej, serie, valor, onChange, ultimoValor }) {
   )
 }
 
-// ─── PANTALLA SELECCIÓN DE USUARIO ───────────────────────────────────────────
+// ─── PANTALLA USUARIOS ───────────────────────────────────────────────────────
 
-function PantallaUsuarios({ users, onSelect, onCreate, onDelete }) {
+function PantallaUsuarios({ users, loading, onSelect, onCreate, onDelete }) {
   const [creando, setCreando] = useState(false)
   const [nombre, setNombre] = useState('')
   const [avatar, setAvatar] = useState('💪')
@@ -131,21 +104,18 @@ function PantallaUsuarios({ users, onSelect, onCreate, onDelete }) {
   const [codigoBorrar, setCodigoBorrar] = useState('')
   const [errorCodigo, setErrorCodigo] = useState(false)
 
-  function intentarBorrar(u) {
-    if (codigoBorrar === 'borrarok') {
-      onDelete(u.id)
-      setBorrandoId(null)
-      setCodigoBorrar('')
-      setErrorCodigo(false)
-    } else {
-      setErrorCodigo(true)
-    }
-  }
-
   function guardar() {
     if (!nombre.trim()) return
     onCreate({ id: Date.now().toString(), nombre: nombre.trim(), avatar, cicloActual: 'hiper', cicloSemanaInicio: getWeekKey() })
     setNombre(''); setAvatar('💪'); setCreando(false)
+  }
+
+  function intentarBorrar(u) {
+    if (codigoBorrar === 'borrarok') {
+      onDelete(u.id); setBorrandoId(null); setCodigoBorrar(''); setErrorCodigo(false)
+    } else {
+      setErrorCodigo(true)
+    }
   }
 
   return (
@@ -156,84 +126,78 @@ function PantallaUsuarios({ users, onSelect, onCreate, onDelete }) {
         <div style={{ fontSize: 14, color: '#8e8e93', marginTop: 6 }}>¿Quién entrena hoy?</div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
-        {users.map(u => {
-          const ciclo = CICLOS.find(c => c.id === u.cicloActual) || CICLOS[0]
-          return (
-            <div key={u.id} style={{ background: '#fff', borderRadius: 16, display: 'flex', alignItems: 'center', padding: '14px 16px', gap: 14 }}>
-              <div style={{ fontSize: 36 }}>{u.avatar}</div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 17, fontWeight: 700, color: '#1c1c1e' }}>{u.nombre}</div>
-                <div style={{ fontSize: 11, marginTop: 3, display: 'inline-block', background: ciclo.bg, color: ciclo.color, padding: '2px 8px', borderRadius: 8, fontWeight: 600 }}>
-                  {ciclo.nombre}
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: '40px 0', color: '#8e8e93' }}>
+          <div style={{ fontSize: 32, marginBottom: 12 }}>⏳</div>
+          <div style={{ fontSize: 14 }}>Cargando perfiles...</div>
+        </div>
+      ) : (
+        <>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
+            {users.map(u => {
+              const ciclo = CICLOS.find(c => c.id === u.cicloActual) || CICLOS[0]
+              return (
+                <div key={u.id} style={{ background: '#fff', borderRadius: 16, display: 'flex', alignItems: 'center', padding: '14px 16px', gap: 14 }}>
+                  <div style={{ fontSize: 36 }}>{u.avatar}</div>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 17, fontWeight: 700 }}>{u.nombre}</div>
+                    <div style={{ fontSize: 11, marginTop: 3, display: 'inline-block', background: ciclo.bg, color: ciclo.color, padding: '2px 8px', borderRadius: 8, fontWeight: 600 }}>{ciclo.nombre}</div>
+                  </div>
+                  <button onClick={() => onSelect(u)} style={{ padding: '10px 18px', borderRadius: 12, background: '#6366f1', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 14 }}>Entrar</button>
+                  <button onClick={() => { setBorrandoId(u.id); setCodigoBorrar(''); setErrorCodigo(false) }}
+                    style={{ padding: '10px', borderRadius: 12, background: '#fff0f0', color: '#ff3b30', border: 'none', cursor: 'pointer', fontSize: 16 }}>🗑️</button>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Modal borrar */}
+          {borrandoId && (() => {
+            const u = users.find(x => x.id === borrandoId)
+            return (
+              <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
+                onClick={() => setBorrandoId(null)}>
+                <div style={{ background: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 340 }} onClick={e => e.stopPropagation()}>
+                  <div style={{ fontSize: 32, textAlign: 'center' }}>🗑️</div>
+                  <div style={{ fontSize: 17, fontWeight: 800, textAlign: 'center', marginTop: 10 }}>Eliminar a {u?.nombre}</div>
+                  <div style={{ fontSize: 13, color: '#8e8e93', textAlign: 'center', marginTop: 6, marginBottom: 20 }}>Se borrarán todos sus datos. Escribe el código para confirmar.</div>
+                  <div style={S.label}>Código de confirmación</div>
+                  <input autoFocus type="text" placeholder="escribe el código aquí"
+                    value={codigoBorrar} onChange={e => { setCodigoBorrar(e.target.value); setErrorCodigo(false) }}
+                    onKeyDown={e => e.key === 'Enter' && intentarBorrar(u)}
+                    style={{ ...S.input, marginBottom: 6, border: errorCodigo ? '1.5px solid #ff3b30' : '1px solid #e5e5ea' }} />
+                  {errorCodigo && <div style={{ fontSize: 12, color: '#ff3b30', marginBottom: 12 }}>Código incorrecto.</div>}
+                  <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                    <button onClick={() => setBorrandoId(null)} style={{ flex: 1, padding: 13, borderRadius: 12, background: '#f5f5f7', color: '#8e8e93', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Cancelar</button>
+                    <button onClick={() => intentarBorrar(u)} style={{ flex: 1, padding: 13, borderRadius: 12, background: '#ff3b30', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 700 }}>Eliminar</button>
+                  </div>
                 </div>
               </div>
-              <button onClick={() => onSelect(u)} style={{ padding: '10px 18px', borderRadius: 12, background: '#6366f1', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 14 }}>Entrar</button>
-              <button onClick={() => { setBorrandoId(u.id); setCodigoBorrar(''); setErrorCodigo(false) }}
-                style={{ padding: '10px', borderRadius: 12, background: '#fff0f0', color: '#ff3b30', border: 'none', cursor: 'pointer', fontSize: 16 }}>🗑️</button>
-            </div>
-          )
-        })}
-      </div>
+            )
+          })()}
 
-      {/* Modal borrar con código */}
-      {borrandoId && (() => {
-        const u = users.find(x => x.id === borrandoId)
-        return (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}
-            onClick={() => setBorrandoId(null)}>
-            <div style={{ background: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 340 }} onClick={e => e.stopPropagation()}>
-              <div style={{ fontSize: 32, textAlign: 'center' }}>🗑️</div>
-              <div style={{ fontSize: 17, fontWeight: 800, textAlign: 'center', marginTop: 10 }}>Eliminar a {u?.nombre}</div>
-              <div style={{ fontSize: 13, color: '#8e8e93', textAlign: 'center', marginTop: 6, marginBottom: 20 }}>
-                Se borrarán todos sus datos. Escribe el código para confirmar.
+          {!creando ? (
+            <button onClick={() => setCreando(true)} style={{ width: '100%', padding: '16px', borderRadius: 16, border: '2px dashed #d1d5db', background: 'transparent', color: '#6366f1', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>
+              + Añadir usuario
+            </button>
+          ) : (
+            <div style={{ background: '#fff', borderRadius: 16, padding: 20 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>Nuevo usuario</div>
+              <div style={S.label}>Nombre</div>
+              <input value={nombre} onChange={e => setNombre(e.target.value)} placeholder="ej: Carlos" style={{ ...S.input, marginBottom: 16 }} />
+              <div style={S.label}>Avatar</div>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 20 }}>
+                {AVATARS.map(a => (
+                  <button key={a} onClick={() => setAvatar(a)} style={{ width: 48, height: 48, borderRadius: 12, border: avatar === a ? '2px solid #6366f1' : '2px solid #e5e5ea', background: avatar === a ? '#eef2ff' : '#fff', fontSize: 24, cursor: 'pointer' }}>{a}</button>
+                ))}
               </div>
-              <div style={S.label}>Código de confirmación</div>
-              <input
-                autoFocus
-                type="text"
-                placeholder="escribe el código aquí"
-                value={codigoBorrar}
-                onChange={e => { setCodigoBorrar(e.target.value); setErrorCodigo(false) }}
-                onKeyDown={e => e.key === 'Enter' && intentarBorrar(u)}
-                style={{ ...S.input, marginBottom: 6, border: errorCodigo ? '1.5px solid #ff3b30' : '1px solid #e5e5ea' }}
-              />
-              {errorCodigo && <div style={{ fontSize: 12, color: '#ff3b30', marginBottom: 12 }}>Código incorrecto, inténtalo de nuevo.</div>}
-              <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
-                <button onClick={() => setBorrandoId(null)}
-                  style={{ flex: 1, padding: 13, borderRadius: 12, background: '#f5f5f7', color: '#8e8e93', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
-                  Cancelar
-                </button>
-                <button onClick={() => intentarBorrar(u)}
-                  style={{ flex: 1, padding: 13, borderRadius: 12, background: '#ff3b30', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 700 }}>
-                  Eliminar
-                </button>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => setCreando(false)} style={{ flex: 1, padding: 13, borderRadius: 12, background: '#f5f5f7', color: '#8e8e93', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Cancelar</button>
+                <button onClick={guardar} style={{ flex: 2, ...S.btnPrimary('#6366f1'), borderRadius: 12 }}>Crear</button>
               </div>
             </div>
-          </div>
-        )
-      })()}
-
-      {!creando ? (
-        <button onClick={() => setCreando(true)} style={{ width: '100%', padding: '16px', borderRadius: 16, border: '2px dashed #d1d5db', background: 'transparent', color: '#6366f1', fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>
-          + Añadir usuario
-        </button>
-      ) : (
-        <div style={{ background: '#fff', borderRadius: 16, padding: 20 }}>
-          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>Nuevo usuario</div>
-          <div style={S.label}>Nombre</div>
-          <input value={nombre} onChange={e => setNombre(e.target.value)} placeholder="ej: Carlos" style={{ ...S.input, marginBottom: 16 }} />
-          <div style={S.label}>Avatar</div>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 20 }}>
-            {AVATARS.map(a => (
-              <button key={a} onClick={() => setAvatar(a)} style={{ width: 48, height: 48, borderRadius: 12, border: avatar === a ? '2px solid #6366f1' : '2px solid #e5e5ea', background: avatar === a ? '#eef2ff' : '#fff', fontSize: 24, cursor: 'pointer' }}>{a}</button>
-            ))}
-          </div>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <button onClick={() => setCreando(false)} style={{ flex: 1, padding: 13, borderRadius: 12, background: '#f5f5f7', color: '#8e8e93', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Cancelar</button>
-            <button onClick={guardar} style={{ flex: 2, ...S.btnPrimary('#6366f1'), borderRadius: 12 }}>Crear</button>
-          </div>
-        </div>
+          )}
+        </>
       )}
     </div>
   )
@@ -242,36 +206,67 @@ function PantallaUsuarios({ users, onSelect, onCreate, onDelete }) {
 // ─── APP PRINCIPAL ────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [users, setUsers] = useLS('rg_users', [])
+  const [users, setUsers] = useState([])
+  const [usersLoading, setUsersLoading] = useState(true)
   const [userId, setUserId] = useState(null)
+  const [udLoading, setUdLoading] = useState(false)
   const [tab, setTab] = useState('entreno')
-  // Calcular el día de hoy (0=lun…4=vie, 5/6=finde→0)
   const hoyDow = (() => { const d = new Date().getDay(); return d === 0 ? 4 : Math.min(d - 1, 4) })()
   const [diaIdx, setDiaIdx] = useState(hoyDow)
   const [ejAbierto, setEjAbierto] = useState(null)
   const [altAbierta, setAltAbierta] = useState(null)
-  const [allData, setAllData] = useLS('rg_data', {})
+  const [ud, setUdState] = useState({})
+  const [dietaData, setDietaDataState] = useState({})
   const [pesoInput, setPesoInput] = useState('')
-  const [dietaData, setDietaData] = useLS('rg_dieta', {})
   const [dietaCalc, setDietaCalc] = useState(null)
   const [platoAbierto, setPlatoAbierto] = useState(null)
   const [mostrarCiclos, setMostrarCiclos] = useState(false)
+  const saveTimer = useRef(null)
+  const dietaTimer = useRef(null)
+
+  // Cargar perfiles al inicio
+  useEffect(() => {
+    getProfiles().then(p => { setUsers(p); setUsersLoading(false) })
+  }, [])
+
+  // Cargar datos del usuario al seleccionar
+  useEffect(() => {
+    if (!userId) return
+    setUdLoading(true)
+    Promise.all([getUserData(userId), getDieta(userId)]).then(([data, dieta]) => {
+      setUdState(data)
+      setDietaDataState(dieta)
+      setUdLoading(false)
+    })
+  }, [userId])
+
+  // Guardar datos de usuario con debounce (1s)
+  const setUd = useCallback((newUd) => {
+    setUdState(newUd)
+    clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => saveUserData(userId, newUd), 1000)
+  }, [userId])
+
+  const setDietaUser = useCallback((newDieta) => {
+    setDietaDataState(newDieta)
+    clearTimeout(dietaTimer.current)
+    dietaTimer.current = setTimeout(() => saveDieta(userId, newDieta), 1000)
+  }, [userId])
 
   const user = users.find(u => u.id === userId)
-  const ud = allData[userId] || {}
   const cicloActual = user?.cicloActual || 'hiper'
   const cicloInfo = CICLOS.find(c => c.id === cicloActual) || CICLOS[0]
   const DIAS = getDiasCiclo(cicloActual)
   const dia = DIAS[diaIdx]
 
-  function setUd(newUd) { setAllData({ ...allData, [userId]: newUd }) }
-  function updateUser(fields) { setUsers(users.map(u => u.id === userId ? { ...u, ...fields } : u)) }
+  function updateUser(fields) {
+    const updated = users.map(u => u.id === userId ? { ...u, ...fields } : u)
+    setUsers(updated)
+    upsertProfile({ ...user, ...fields })
+  }
 
-  // ── Registros de peso por ejercicio ──
-  // Estructura: registros[ejId][fecha][sN] = valor
-  // Separado del día para que persista entre rotaciones de ciclo
+  // ── Registros ──
   const registros = ud.registros || {}
-
   function setValorEj(ejId, serie, valor) {
     const hoy = new Date().toLocaleDateString('es-ES')
     const r = JSON.parse(JSON.stringify(registros))
@@ -280,30 +275,22 @@ export default function App() {
     r[ejId][hoy][`s${serie}`] = valor
     setUd({ ...ud, registros: r })
   }
-
   function getValorHoy(ejId, serie) {
     const hoy = new Date().toLocaleDateString('es-ES')
     return registros[ejId]?.[hoy]?.[`s${serie}`] || ''
   }
-
-  // Último valor registrado para un ejercicio (cualquier día pasado, no hoy)
   function getUltimoValor(ejId) {
     const hoy = new Date().toLocaleDateString('es-ES')
     const fechas = Object.keys(registros[ejId] || {}).filter(f => f !== hoy).sort().reverse()
     if (!fechas.length) return null
-    const ultima = registros[ejId][fechas[0]]
-    // Devuelve el valor de la primera serie como referencia
-    return ultima?.s1 || null
+    return registros[ejId][fechas[0]]?.s1 || null
   }
-
   function getMaxValor(ejId, tipo) {
     let max = 0
-    Object.values(registros[ejId] || {}).forEach(dia => {
-      Object.values(dia).forEach(v => {
-        const n = tipo === 'peso_reps' ? Number((v || '').split('|')[0]) : Number(v)
-        if (n > max) max = n
-      })
-    })
+    Object.values(registros[ejId] || {}).forEach(d => Object.values(d).forEach(v => {
+      const n = tipo === 'peso_reps' ? Number((v || '').split('|')[0]) : Number(v)
+      if (n > max) max = n
+    }))
     return max || null
   }
 
@@ -320,35 +307,28 @@ export default function App() {
   function guardarSemana() {
     const semana = getWeekKey()
     const snapshot = {}
-    DIAS.forEach(d => {
-      d.ejercicios.forEach(ej => {
-        const max = getMaxValor(ej.id, ej.tipo)
-        if (max) {
-          if (!snapshot[d.id]) snapshot[d.id] = {}
-          snapshot[d.id][ej.id] = { nombre: ej.nombre, max, tipo: ej.tipo }
-        }
-      })
-    })
+    DIAS.forEach(d => d.ejercicios.forEach(ej => {
+      const max = getMaxValor(ej.id, ej.tipo)
+      if (max) { if (!snapshot[d.id]) snapshot[d.id] = {}; snapshot[d.id][ej.id] = { nombre: ej.nombre, max, tipo: ej.tipo } }
+    }))
     setUd({ ...ud, progSemanal: { ...progSemanal, [semana]: { snapshot, peso: histPeso.at(-1)?.peso, ciclo: cicloActual, fecha: new Date().toLocaleDateString('es-ES') } } })
     alert(`✅ Semana ${semana} guardada`)
   }
 
   // ── Dieta ──
-  const dUser = dietaData[userId] || { altura: '', edad: '', pesoActual: '', pesoObj: '', meta: 'recomposicion', sexo: 'hombre' }
-  function setDUser(d) { setDietaData({ ...dietaData, [userId]: d }) }
+  const dUser = dietaData || { altura: '', edad: '', pesoActual: '', pesoObj: '', meta: 'recomposicion', sexo: 'hombre' }
   function calcDieta() {
     const { altura, edad, pesoActual, meta, sexo } = dUser
     if (!altura || !edad || !pesoActual) return
     const tmb = sexo === 'hombre' ? 10 * +pesoActual + 6.25 * +altura - 5 * +edad + 5 : 10 * +pesoActual + 6.25 * +altura - 5 * +edad - 161
     const tdee = Math.round(tmb * 1.55)
     const kcal = meta === 'perder' ? tdee - 400 : meta === 'ganar' ? tdee + 300 : tdee
-    const p = Math.round(+pesoActual * 2.0)
-    const g = Math.round(kcal * 0.25 / 9)
+    const p = Math.round(+pesoActual * 2.0), g = Math.round(kcal * 0.25 / 9)
     const c = Math.round((kcal - p * 4 - g * 9) / 4)
     setDietaCalc({ tdee, kcal, p, c, g })
   }
 
-  // ── Calcular semanas en ciclo actual ──
+  // ── Ciclo ──
   function semanasEnCiclo() {
     if (!user?.cicloSemanaInicio) return 0
     const [ay, aw] = user.cicloSemanaInicio.split('-W').map(Number)
@@ -358,18 +338,29 @@ export default function App() {
   const semanasCiclo = semanasEnCiclo()
   const semanasRestantes = Math.max(0, cicloInfo.semanas - semanasCiclo)
   const cicloCompletado = semanasCiclo >= cicloInfo.semanas
+  function cambiarCiclo(id) { updateUser({ cicloActual: id, cicloSemanaInicio: getWeekKey() }); setMostrarCiclos(false); setEjAbierto(null) }
 
-  function cambiarCiclo(nuevoCicloId) {
-    updateUser({ cicloActual: nuevoCicloId, cicloSemanaInicio: getWeekKey() })
-    setMostrarCiclos(false)
-    setEjAbierto(null)
-  }
-
+  // Pantalla de usuarios
   if (!userId) return (
-    <PantallaUsuarios users={users}
-      onSelect={u => setUserId(u.id)}
-      onCreate={u => setUsers([...users, u])}
-      onDelete={id => { setUsers(users.filter(u => u.id !== id)); const d = { ...allData }; delete d[id]; setAllData(d) }} />
+    <PantallaUsuarios
+      users={users} loading={usersLoading}
+      onSelect={u => { setUserId(u.id); setTab('entreno') }}
+      onCreate={async u => {
+        setUsers(prev => [...prev, u])
+        await upsertProfile(u)
+      }}
+      onDelete={async id => {
+        setUsers(prev => prev.filter(u => u.id !== id))
+        await deleteProfile(id)
+      }}
+    />
+  )
+
+  if (udLoading) return (
+    <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100dvh', background: '#f5f5f7', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+      <div style={{ fontSize: 48 }}>{user?.avatar}</div>
+      <div style={{ fontSize: 16, color: '#8e8e93' }}>Cargando datos de {user?.nombre}…</div>
+    </div>
   )
 
   const TABS = [
@@ -399,8 +390,6 @@ export default function App() {
             {user?.avatar}
           </button>
         </div>
-
-        {/* Banner de ciclo */}
         {tab === 'entreno' && (
           <button onClick={() => setMostrarCiclos(!mostrarCiclos)}
             style={{ marginTop: 12, width: '100%', padding: '10px 14px', borderRadius: 12, background: cicloInfo.bg, border: `1px solid ${cicloInfo.color}30`, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -415,16 +404,12 @@ export default function App() {
         )}
       </div>
 
-      {/* Modal cambio de ciclo */}
+      {/* Modal ciclos */}
       {mostrarCiclos && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }}
-          onClick={() => setMostrarCiclos(false)}>
-          <div style={{ background: '#fff', borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 430, margin: '0 auto', padding: 20, paddingBottom: 40 }}
-            onClick={e => e.stopPropagation()}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }} onClick={() => setMostrarCiclos(false)}>
+          <div style={{ background: '#fff', borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 430, margin: '0 auto', padding: 20, paddingBottom: 40 }} onClick={e => e.stopPropagation()}>
             <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 6 }}>Cambiar ciclo de entrenamiento</div>
-            <div style={{ fontSize: 13, color: '#8e8e93', marginBottom: 16, lineHeight: 1.5 }}>
-              La ciencia recomienda cambiar el estímulo cada <b>4–6 semanas</b> para evitar estancamientos. Cada ciclo varía las series, reps y algunos ejercicios.
-            </div>
+            <div style={{ fontSize: 13, color: '#8e8e93', marginBottom: 16, lineHeight: 1.5 }}>La ciencia recomienda cambiar el estímulo cada <b>4–6 semanas</b> para evitar estancamientos.</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {CICLOS.map(c => (
                 <button key={c.id} onClick={() => cambiarCiclo(c.id)}
@@ -434,8 +419,7 @@ export default function App() {
                     <span style={{ fontSize: 11, color: '#8e8e93' }}>{c.semanas} {c.semanas === 1 ? 'semana' : 'semanas'}</span>
                   </div>
                   <div style={{ fontSize: 12, color: '#8e8e93', marginTop: 4 }}>{c.descripcion}</div>
-                  <div style={{ fontSize: 11, color: c.color, marginTop: 4, fontWeight: 500 }}>{c.objetivo}</div>
-                  {c.id === cicloActual && <span style={{ fontSize: 11, fontWeight: 700, color: c.color }}>✓ Activo</span>}
+                  {c.id === cicloActual && <div style={{ fontSize: 11, fontWeight: 700, color: c.color, marginTop: 4 }}>✓ Activo</div>}
                 </button>
               ))}
             </div>
@@ -448,44 +432,27 @@ export default function App() {
         {/* ══════════ ENTRENO ══════════ */}
         {tab === 'entreno' && (
           <>
-            {/* ── Calendario semanal ── */}
+            {/* Calendario */}
             {(() => {
               const semana = getSemanaActual()
-              const hoy = new Date()
-              hoy.setHours(0,0,0,0)
+              const hoy = new Date(); hoy.setHours(0,0,0,0)
               return (
-                <div style={{ background: '#fff', borderRadius: 16, padding: '14px 12px', marginBottom: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.06)' }}>
-                  {/* Mes y año */}
+                <div style={{ background: '#fff', borderRadius: 16, padding: '14px 12px', marginBottom: 12 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, color: '#1c1c1e', marginBottom: 12, paddingLeft: 2 }}>
                     {hoy.toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }).replace(/^\w/, c => c.toUpperCase())}
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 4 }}>
                     {semana.map((fecha, i) => {
                       const esFinde = i >= 5
-                      const esHoy = fecha.getTime() === hoy.getTime()
-                      const esActivo = !esFinde && diaIdx === DIA_IDX_MAP[i]
-                      const tieneSesion = !esFinde
+                      const f = new Date(fecha); f.setHours(0,0,0,0)
+                      const esHoy = f.getTime() === hoy.getTime()
+                      const esActivo = !esFinde && diaIdx === i
                       return (
-                        <button key={i}
-                          onClick={() => { if (!esFinde) { setDiaIdx(DIA_IDX_MAP[i]); setEjAbierto(null); setAltAbierta(null) } }}
-                          style={{
-                            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
-                            padding: '8px 4px', borderRadius: 12, border: 'none', cursor: esFinde ? 'default' : 'pointer',
-                            background: esActivo ? cicloInfo.color : esHoy ? cicloInfo.bg : 'transparent',
-                            opacity: esFinde ? 0.35 : 1,
-                            transition: 'all .15s',
-                          }}>
-                          <span style={{ fontSize: 10, fontWeight: 600, color: esActivo ? '#fff' : '#8e8e93' }}>
-                            {DIAS_SEMANA_LABEL[i]}
-                          </span>
-                          <span style={{ fontSize: 17, fontWeight: 800, color: esActivo ? '#fff' : esHoy ? cicloInfo.color : '#1c1c1e' }}>
-                            {fecha.getDate()}
-                          </span>
-                          {tieneSesion && (
-                            <span style={{ fontSize: 14, lineHeight: 1 }}>
-                              {esActivo || esHoy ? DIAS[DIA_IDX_MAP[i]]?.emoji : '·'}
-                            </span>
-                          )}
+                        <button key={i} onClick={() => { if (!esFinde) { setDiaIdx(i); setEjAbierto(null); setAltAbierta(null) } }}
+                          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '8px 4px', borderRadius: 12, border: 'none', cursor: esFinde ? 'default' : 'pointer', background: esActivo ? cicloInfo.color : esHoy ? cicloInfo.bg : 'transparent', opacity: esFinde ? 0.3 : 1, transition: 'all .15s' }}>
+                          <span style={{ fontSize: 10, fontWeight: 600, color: esActivo ? '#fff' : '#8e8e93' }}>{DIAS_SEMANA_LABEL[i]}</span>
+                          <span style={{ fontSize: 17, fontWeight: 800, color: esActivo ? '#fff' : esHoy ? cicloInfo.color : '#1c1c1e' }}>{fecha.getDate()}</span>
+                          <span style={{ fontSize: 13, lineHeight: 1 }}>{!esFinde ? (esActivo || esHoy ? DIAS[i]?.emoji : '·') : '😴'}</span>
                         </button>
                       )
                     })}
@@ -494,11 +461,14 @@ export default function App() {
               )
             })()}
 
+            {/* Banner día */}
             {(() => {
               const semana = getSemanaActual()
-              const fechaDia = semana[diaIdx]
-              const esHoy = fechaDia && fechaDia.setHours(0,0,0,0) === new Date().setHours(0,0,0,0)
-              const fechaStr = fechaDia ? fechaDia.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' }) : ''
+              const fecha = semana[diaIdx]
+              const f = new Date(fecha); f.setHours(0,0,0,0)
+              const hoy = new Date(); hoy.setHours(0,0,0,0)
+              const esHoy = f.getTime() === hoy.getTime()
+              const fechaStr = fecha.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })
               return (
                 <div style={{ ...S.card, background: dia.bg, marginBottom: 12 }}>
                   <div style={{ padding: 16 }}>
@@ -514,19 +484,14 @@ export default function App() {
               )
             })()}
 
+            {/* Ejercicios */}
             {dia.ejercicios.map((ej, idx) => {
               const open = ejAbierto === ej.id
               const altOpen = altAbierta === ej.id
               const max = getMaxValor(ej.id, ej.tipo)
               const ultimo = getUltimoValor(ej.id)
               const esDeload = String(ej.reps).includes('deload')
-
-              const etiquetaMax = () => {
-                if (!max) return null
-                if (ej.tipo === 'tiempo') return `🕐 ${max}s`
-                if (ej.tipo === 'reps') return `✓ ${max} reps`
-                return `🏆 ${max}kg`
-              }
+              const etiquetaMax = max ? (ej.tipo === 'tiempo' ? `🕐 ${max}s` : ej.tipo === 'reps' ? `✓ ${max} reps` : `🏆 ${max}kg`) : null
 
               return (
                 <div key={ej.id} style={{ ...S.card, border: open ? `2px solid ${cicloInfo.color}` : '2px solid transparent' }}>
@@ -539,17 +504,17 @@ export default function App() {
                     </div>
                     <div style={{ textAlign: 'right', marginRight: 6 }}>
                       <div style={{ fontSize: 13, fontWeight: 700, color: cicloInfo.color }}>{ej.series}×{ej.tipo === 'tiempo' ? `${ej.reps}s` : ej.reps}</div>
-                      {etiquetaMax() && <div style={{ fontSize: 11, color: '#8e8e93' }}>{etiquetaMax()}</div>}
+                      {etiquetaMax && <div style={{ fontSize: 11, color: '#8e8e93' }}>{etiquetaMax}</div>}
                     </div>
                     <span style={{ color: '#c7c7cc', fontSize: 11 }}>{open ? '▲' : '▼'}</span>
                   </button>
 
                   {open && (
                     <div style={{ borderTop: '1px solid #f2f2f7', padding: '14px 16px' }}>
-                      {/* GIF */}
+                      {/* GIF — referrerPolicy="no-referrer" para evitar bloqueos de hotlink */}
                       <div style={{ borderRadius: 12, overflow: 'hidden', marginBottom: 12, background: '#f5f5f7', aspectRatio: '16/9', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-                        <img src={ej.gif} alt={ej.nombre}
-                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        <img src={ej.gif} alt={ej.nombre} referrerPolicy="no-referrer"
+                          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                           onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex' }} />
                         <div style={{ display: 'none', position: 'absolute', inset: 0, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: '#8e8e93' }}>
                           <span style={{ fontSize: 40 }}>🏋️</span>
@@ -557,22 +522,14 @@ export default function App() {
                         </div>
                       </div>
 
-                      {/* Tip + badge ciclo */}
-                      <div style={{ background: cicloInfo.bg, borderRadius: 10, padding: '10px 12px', marginBottom: 14, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                        <span style={{ fontSize: 14 }}>💡</span>
-                        <div>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: cicloInfo.color, marginBottom: 3 }}>{cicloInfo.nombre}: {ej.series} series × {ej.tipo === 'tiempo' ? `${ej.reps} seg` : ej.reps}</div>
-                          <div style={{ fontSize: 12, color: '#3c3c43', lineHeight: 1.4 }}>{ej.tip}</div>
-                          {esDeload && <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, fontWeight: 600 }}>⚡ Deload: usa ~50% de tu peso habitual para recuperar</div>}
-                        </div>
+                      <div style={{ background: cicloInfo.bg, borderRadius: 10, padding: '10px 12px', marginBottom: 14 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: cicloInfo.color, marginBottom: 3 }}>{cicloInfo.nombre}: {ej.series} series × {ej.tipo === 'tiempo' ? `${ej.reps} seg` : ej.reps}</div>
+                        <div style={{ fontSize: 12, color: '#3c3c43', lineHeight: 1.4 }}>{ej.tip}</div>
+                        {esDeload && <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, fontWeight: 600 }}>⚡ Deload: usa ~50% de tu peso habitual</div>}
                       </div>
 
-                      {/* Registro */}
                       <div style={{ fontSize: 13, fontWeight: 600, color: '#3c3c43', marginBottom: 10 }}>
-                        {ej.tipo === 'tiempo' ? 'Registra el tiempo (seg) por serie:' :
-                         ej.tipo === 'reps' ? 'Registra las repeticiones por serie:' :
-                         ej.tipo === 'peso_reps' ? 'Registra peso (kg) y reps por serie:' :
-                         'Registra el peso (kg) por serie:'}
+                        {ej.tipo === 'tiempo' ? 'Tiempo (seg) por serie:' : ej.tipo === 'reps' ? 'Repeticiones por serie:' : ej.tipo === 'peso_reps' ? 'Peso (kg) y reps por serie:' : 'Peso (kg) por serie:'}
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(ej.series, ej.tipo === 'peso_reps' ? 2 : 4)}, 1fr)`, gap: 8, marginBottom: 14 }}>
                         {Array.from({ length: ej.series }, (_, i) => i + 1).map(s => (
@@ -583,7 +540,6 @@ export default function App() {
                         ))}
                       </div>
 
-                      {/* Botón alternativa */}
                       {ej.alternativas?.length > 0 && (
                         <>
                           <button onClick={() => setAltAbierta(altOpen ? null : ej.id)}
@@ -619,15 +575,12 @@ export default function App() {
             <div style={{ ...S.card, padding: 16 }}>
               <div style={S.label}>Peso de hoy</div>
               <div style={{ display: 'flex', gap: 10 }}>
-                <input type="number" inputMode="decimal" placeholder="ej: 78.5"
-                  value={pesoInput} onChange={e => setPesoInput(e.target.value)}
-                  style={{ ...S.input, flex: 1, fontSize: 20, fontWeight: 700 }} />
+                <input type="number" inputMode="decimal" placeholder="ej: 78.5" value={pesoInput} onChange={e => setPesoInput(e.target.value)} style={{ ...S.input, flex: 1, fontSize: 20, fontWeight: 700 }} />
                 <span style={{ padding: '12px 0', color: '#8e8e93', fontWeight: 600, alignSelf: 'center' }}>kg</span>
                 <button onClick={addPeso} style={{ ...S.btnPrimary('#6366f1'), width: 'auto', padding: '12px 20px', borderRadius: 12 }}>Guardar</button>
               </div>
             </div>
-
-            {histPeso.length > 0 && (
+            {histPeso.length > 0 ? (
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
                   <div style={{ ...S.card, padding: 16, textAlign: 'center' }}>
@@ -638,9 +591,7 @@ export default function App() {
                   <div style={{ ...S.card, padding: 16, textAlign: 'center' }}>
                     <div style={{ fontSize: 12, color: '#8e8e93' }}>Cambio total</div>
                     {histPeso.length > 1
-                      ? <><div style={{ fontSize: 28, fontWeight: 800, marginTop: 4, color: histPeso.at(-1).peso <= histPeso[0].peso ? '#10b981' : '#f97316' }}>
-                          {(histPeso.at(-1).peso - histPeso[0].peso > 0 ? '+' : '')}{(histPeso.at(-1).peso - histPeso[0].peso).toFixed(1)}
-                        </div><div style={{ fontSize: 13, color: '#8e8e93' }}>kg</div></>
+                      ? <><div style={{ fontSize: 28, fontWeight: 800, marginTop: 4, color: histPeso.at(-1).peso <= histPeso[0].peso ? '#10b981' : '#f97316' }}>{(histPeso.at(-1).peso - histPeso[0].peso > 0 ? '+' : '')}{(histPeso.at(-1).peso - histPeso[0].peso).toFixed(1)}</div><div style={{ fontSize: 13, color: '#8e8e93' }}>kg</div></>
                       : <div style={{ fontSize: 22, marginTop: 8 }}>—</div>}
                   </div>
                 </div>
@@ -672,8 +623,7 @@ export default function App() {
                   ))}
                 </div>
               </>
-            )}
-            {histPeso.length === 0 && <div style={{ textAlign: 'center', padding: '60px 0', color: '#8e8e93' }}><div style={{ fontSize: 48 }}>⚖️</div><div style={{ marginTop: 12 }}>Registra tu primer pesaje</div></div>}
+            ) : <div style={{ textAlign: 'center', padding: '60px 0', color: '#8e8e93' }}><div style={{ fontSize: 48 }}>⚖️</div><div style={{ marginTop: 12 }}>Registra tu primer pesaje</div></div>}
           </>
         )}
 
@@ -685,24 +635,23 @@ export default function App() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
                 {[['Altura (cm)', 'altura', '175'], ['Edad (años)', 'edad', '30'], ['Peso actual (kg)', 'pesoActual', '80'], ['Peso objetivo (kg)', 'pesoObj', '75']].map(([l, k, ph]) => (
                   <div key={k}><div style={S.label}>{l}</div>
-                    <input type="number" inputMode="decimal" placeholder={ph} value={dUser[k]} onChange={e => setDUser({ ...dUser, [k]: e.target.value })} style={S.input} /></div>
+                    <input type="number" inputMode="decimal" placeholder={ph} value={dUser[k] || ''} onChange={e => setDietaUser({ ...dUser, [k]: e.target.value })} style={S.input} /></div>
                 ))}
               </div>
               <div style={S.label}>Sexo</div>
               <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
                 {[['hombre', '♂ Hombre'], ['mujer', '♀ Mujer']].map(([v, l]) => (
-                  <button key={v} style={{ ...S.btnPill(dUser.sexo === v, '#6366f1'), flex: 1 }} onClick={() => setDUser({ ...dUser, sexo: v })}>{l}</button>
+                  <button key={v} style={{ ...S.btnPill(dUser.sexo === v, '#6366f1'), flex: 1 }} onClick={() => setDietaUser({ ...dUser, sexo: v })}>{l}</button>
                 ))}
               </div>
               <div style={S.label}>Objetivo</div>
               <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
                 {[['perder', '🔥 Bajar'], ['recomposicion', '⚡ Recomp'], ['ganar', '💪 Ganar']].map(([v, l]) => (
-                  <button key={v} style={{ ...S.btnPill(dUser.meta === v, '#6366f1'), flex: 1 }} onClick={() => setDUser({ ...dUser, meta: v })}>{l}</button>
+                  <button key={v} style={{ ...S.btnPill(dUser.meta === v, '#6366f1'), flex: 1 }} onClick={() => setDietaUser({ ...dUser, meta: v })}>{l}</button>
                 ))}
               </div>
               <button style={S.btnPrimary('#6366f1')} onClick={calcDieta}>Calcular mi plan</button>
             </div>
-
             {dietaCalc && (
               <>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, marginBottom: 10 }}>
@@ -777,10 +726,9 @@ export default function App() {
           <>
             <div style={{ ...S.card, padding: 16, marginBottom: 10, background: '#eef2ff' }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: '#6366f1', marginBottom: 4 }}>📅 Semana actual: {getWeekKey()}</div>
-              <div style={{ fontSize: 12, color: '#8e8e93', marginBottom: 12, lineHeight: 1.5 }}>Guarda un snapshot de tus mejores marcas para comparar semana a semana.</div>
+              <div style={{ fontSize: 12, color: '#8e8e93', marginBottom: 12 }}>Guarda un snapshot de tus mejores marcas para comparar semana a semana.</div>
               <button onClick={guardarSemana} style={S.btnPrimary('#6366f1')}>💾 Guardar progreso de esta semana</button>
             </div>
-
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
               <div style={{ ...S.card, padding: 16, textAlign: 'center' }}>
                 <div style={{ fontSize: 12, color: '#8e8e93' }}>Peso actual</div>
@@ -791,17 +739,16 @@ export default function App() {
                 <div style={{ fontSize: 26, fontWeight: 800, color: '#10b981', marginTop: 4 }}>{Object.keys(progSemanal).length}</div>
               </div>
             </div>
-
             {Object.entries(progSemanal).sort((a, b) => b[0].localeCompare(a[0])).map(([semana, data], si, arr) => {
               const anterior = arr[si + 1]?.[1]
               const cicloSemana = CICLOS.find(c => c.id === data.ciclo) || cicloInfo
               return (
                 <div key={semana} style={{ ...S.card, marginBottom: 10 }}>
                   <div style={{ padding: '12px 16px', background: '#f5f5f7', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                       <span style={{ fontSize: 14, fontWeight: 800 }}>{semana}</span>
-                      {si === 0 && <span style={{ marginLeft: 8, fontSize: 11, background: '#6366f1', color: '#fff', padding: '2px 8px', borderRadius: 10 }}>Última</span>}
-                      <div style={{ display: 'inline-block', marginLeft: 8, fontSize: 11, background: cicloSemana.bg, color: cicloSemana.color, padding: '1px 8px', borderRadius: 8, fontWeight: 600 }}>{cicloSemana.nombre}</div>
+                      {si === 0 && <span style={{ fontSize: 11, background: '#6366f1', color: '#fff', padding: '2px 8px', borderRadius: 10 }}>Última</span>}
+                      <span style={{ fontSize: 11, background: cicloSemana.bg, color: cicloSemana.color, padding: '1px 8px', borderRadius: 8, fontWeight: 600 }}>{cicloSemana.nombre}</span>
                     </div>
                     {data.peso && <span style={{ fontSize: 13, color: '#8e8e93' }}>⚖️ {data.peso}kg</span>}
                   </div>
@@ -815,17 +762,13 @@ export default function App() {
                         </div>
                         {ejs.map(([ejId, m], i) => {
                           const prevMax = anterior?.snapshot?.[d.id]?.[ejId]?.max
-                          const diff = prevMax ? m.max - prevMax : null
+                          const diff = prevMax != null ? m.max - prevMax : null
                           const unidad = m.tipo === 'tiempo' ? 's' : m.tipo === 'reps' ? ' reps' : 'kg'
                           return (
                             <div key={ejId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 16px', borderTop: '1px solid #f2f2f7' }}>
                               <span style={{ fontSize: 13 }}>{m.nombre}</span>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                {diff !== null && diff !== 0 && (
-                                  <span style={{ fontSize: 12, fontWeight: 700, color: diff > 0 ? '#10b981' : '#f97316' }}>
-                                    {diff > 0 ? `▲ +${diff}` : `▼ ${diff}`}{unidad}
-                                  </span>
-                                )}
+                                {diff !== null && diff !== 0 && <span style={{ fontSize: 12, fontWeight: 700, color: diff > 0 ? '#10b981' : '#f97316' }}>{diff > 0 ? `▲ +${diff}` : `▼ ${diff}`}{unidad}</span>}
                                 <span style={{ fontSize: 14, fontWeight: 800, color: '#f59e0b' }}>🏆 {m.max}{unidad}</span>
                               </div>
                             </div>
@@ -837,7 +780,6 @@ export default function App() {
                 </div>
               )
             })}
-
             {Object.keys(progSemanal).length === 0 && (
               <div style={{ textAlign: 'center', padding: '40px 20px', color: '#8e8e93' }}>
                 <div style={{ fontSize: 48 }}>📅</div>
