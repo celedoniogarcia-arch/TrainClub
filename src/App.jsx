@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { CICLOS, PLATOS, PLATOS_PREPARADOS, AVATARS, getDiasCiclo, matchMusculo, getPlatosByObjetivo } from './data.js'
 import fitcronEjercicios from './fitcron_exercises.json'
 import { getProfiles, upsertProfile, deleteProfile, getUserData, saveUserData, getDieta, saveDieta } from './db.js'
@@ -415,7 +415,10 @@ export default function App() {
   const user = users.find(u => u.id === userId)
   const cicloActual = user?.cicloActual || 'hiper'
   const cicloInfo = CICLOS.find(c => c.id === cicloActual) || CICLOS[0]
-  const DIAS = getDiasCiclo(cicloActual, user?.objetivo || 'recomposicion', user?.nivel || 'intermedio')
+  const DIAS = useMemo(
+    () => getDiasCiclo(cicloActual, user?.objetivo || 'recomposicion', user?.nivel || 'intermedio'),
+    [cicloActual, user?.objetivo, user?.nivel]
+  )
   const esFinde = selectedDate.getDay() === 0 || selectedDate.getDay() === 6
   const dia = DIAS.find(d => d.id === DOW_TO_ID[selectedDate.getDay()]) || DIAS[0]
 
@@ -429,7 +432,7 @@ export default function App() {
   const registros = ud.registros || {}
   function setValorEj(ejId, serie, valor) {
     const hoy = new Date().toLocaleDateString('es-ES')
-    const r = JSON.parse(JSON.stringify(registros))
+    const r = structuredClone(registros)
     if (!r[ejId]) r[ejId] = {}
     if (!r[ejId][hoy]) r[ejId][hoy] = {}
     r[ejId][hoy][`s${serie}`] = valor
@@ -443,7 +446,9 @@ export default function App() {
     const hoy = new Date().toLocaleDateString('es-ES')
     const fechas = Object.keys(registros[ejId] || {}).filter(f => f !== hoy).sort().reverse()
     if (!fechas.length) return null
-    return registros[ejId][fechas[0]]?.s1 || null
+    // Devuelve el mejor valor de todas las series del último día (no solo s1)
+    const series = Object.values(registros[ejId][fechas[0]] || {})
+    return series.find(v => v) || null
   }
   function getMaxValor(ejId, tipo) {
     let max = 0
@@ -456,7 +461,7 @@ export default function App() {
 
   function aplicarSugerencia(ej, sug, series) {
     const hoy = new Date().toLocaleDateString('es-ES')
-    const r = JSON.parse(JSON.stringify(registros))
+    const r = structuredClone(registros)
     if (!r[ej.id]) r[ej.id] = {}
     if (!r[ej.id][hoy]) r[ej.id][hoy] = {}
     for (let s = 1; s <= series; s++) {
@@ -489,7 +494,8 @@ export default function App() {
       if (max) { if (!snapshot[d.id]) snapshot[d.id] = {}; snapshot[d.id][ej.id] = { nombre: ej.nombre, max, tipo: ej.tipo } }
     }))
     setUd({ ...ud, progSemanal: { ...progSemanal, [semana]: { snapshot, peso: histPeso.at(-1)?.peso, ciclo: cicloActual, fecha: new Date().toLocaleDateString('es-ES') } } })
-    alert(`✅ Semana ${semana} guardada`)
+    setRevisionBanner({ tipo: 'ok', msg: `Semana ${semana} guardada` })
+    setTimeout(() => setRevisionBanner(null), 3000)
   }
 
   // ── Dieta ──
@@ -665,7 +671,7 @@ export default function App() {
   }
 
   // ── Motor de reglas (después de semanasCiclo) ─────────────────────────────
-  const reglas = generarRecomendaciones({
+  const reglas = useMemo(() => generarRecomendaciones({
     objetivo: user?.objetivo || 'recomposicion',
     nivel: user?.nivel || 'intermedio',
     semanasCiclo,
@@ -674,7 +680,7 @@ export default function App() {
     actividades: ud.actividades || [],
     seriesExtra: ud.seriesExtra || {},
     DIAS,
-  })
+  }), [user?.objetivo, user?.nivel, semanasCiclo, ud.registros, ud.histPeso, ud.actividades, ud.seriesExtra, DIAS])
   const cicloCompletado = semanasCiclo >= cicloInfo.semanas
   function cambiarCiclo(id) { updateUser({ cicloActual: id, cicloSemanaInicio: getWeekKey() }); setMostrarCiclos(false); setEjAbierto(null) }
 
