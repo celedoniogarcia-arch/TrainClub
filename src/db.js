@@ -11,6 +11,7 @@ function rowToProfile(row) {
     cicloSemanaInicio: row.ciclo_semana_inicio || null,
     objetivo: row.objetivo || null,
     nivel: row.nivel || null,
+    authUserId: row.auth_user_id || null,
   }
 }
 
@@ -23,6 +24,7 @@ function profileToRow(profile) {
     ciclo_semana_inicio: profile.cicloSemanaInicio || null,
     objetivo: profile.objetivo || null,
     nivel: profile.nivel || null,
+    auth_user_id: profile.authUserId || null,
   }
 }
 

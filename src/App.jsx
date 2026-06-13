@@ -296,10 +296,17 @@ export default function App() {
     return () => subscription.unsubscribe()
   }, [])
 
-  // Cargar perfiles al inicio (solo cuando hay sesión o modo offline)
+  // Cargar perfiles al inicio y auto-seleccionar si hay sesión vinculada
   useEffect(() => {
     if (authSession === null) return // aún cargando auth
-    getProfiles().then(p => { setUsers(p); setUsersLoading(false) })
+    getProfiles().then(p => {
+      setUsers(p)
+      setUsersLoading(false)
+      if (authSession && authSession.user) {
+        const vinculado = p.find(u => u.authUserId === authSession.user.id)
+        if (vinculado) setUserId(vinculado.id)
+      }
+    })
   }, [authSession])
 
   // Cargar datos del usuario al seleccionar
@@ -700,10 +707,19 @@ export default function App() {
   if (!userId) return (
     <PantallaUsuarios
       users={users} loading={usersLoading}
-      onSelect={u => { setUserId(u.id); setTab('entreno') }}
+      onSelect={async u => {
+        // Si el perfil no está vinculado a este auth user, vincularlo ahora
+        if (authSession?.user && !u.authUserId) {
+          const vinculado = { ...u, authUserId: authSession.user.id }
+          setUsers(prev => prev.map(p => p.id === u.id ? vinculado : p))
+          await upsertProfile(vinculado)
+        }
+        setUserId(u.id); setTab('entreno')
+      }}
       onCreate={async u => {
-        setUsers(prev => [...prev, u])
-        await upsertProfile(u)
+        const conAuth = authSession?.user ? { ...u, authUserId: authSession.user.id } : u
+        setUsers(prev => [...prev, conAuth])
+        await upsertProfile(conAuth)
       }}
       onDelete={async id => {
         setUsers(prev => prev.filter(u => u.id !== id))
