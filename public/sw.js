@@ -1,4 +1,4 @@
-const CACHE = 'myfitnessclub-v1'
+const CACHE = 'trainclub-v1'
 const PRECACHE = ['/', '/index.html']
 
 self.addEventListener('install', e => {
@@ -23,14 +23,14 @@ self.addEventListener('fetch', e => {
 // Push notification handler
 self.addEventListener('push', e => {
   const data = e.data?.json() || {}
-  const title = data.title || 'MyFitnessClub'
+  const title = data.title || 'TrainClub'
   const body  = data.body  || '¡Hoy toca entrenar!'
   e.waitUntil(
     self.registration.showNotification(title, {
       body,
       icon: '/icon-192.png',
       badge: '/icon-192.png',
-      tag: 'myfitnessclub-reminder',
+      tag: 'trainclub-reminder',
       renotify: true,
       data: { url: data.url || '/' },
     })

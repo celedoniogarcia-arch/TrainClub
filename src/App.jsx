@@ -146,7 +146,7 @@ function PantallaUsuarios({ users, loading, onSelect, onCreate, onDelete, onSign
     <div style={{ maxWidth: 430, margin: '0 auto', minHeight: '100dvh', background: '#f5f5f7', padding: '60px 20px 20px' }}>
       <div style={{ textAlign: 'center', marginBottom: 32, position: 'relative' }}>
         <div style={{ fontSize: 52 }}>🏋️</div>
-        <div style={{ fontSize: 26, fontWeight: 800, color: '#1c1c1e', marginTop: 12 }}>MyFitnessClub</div>
+        <div style={{ fontSize: 26, fontWeight: 800, color: '#1c1c1e', marginTop: 12 }}>TrainClub</div>
         <div style={{ fontSize: 14, color: '#8e8e93', marginTop: 6 }}>¿Quién entrena hoy?</div>
         {onSignOut && (
           <button onClick={onSignOut}
@@ -1385,7 +1385,7 @@ export default function App() {
                           const perm = await Notification.requestPermission()
                           setNotifPermiso(perm)
                           if (perm === 'granted') {
-                            new Notification('MyFitnessClub', {
+                            new Notification('TrainClub', {
                               body: '¡Perfecto! Te avisaremos los días de entreno.',
                               icon: '/icon-192.png',
                             })
@@ -1397,7 +1397,7 @@ export default function App() {
                     )}
                     {notifPermiso === 'granted' && (
                       <button
-                        onClick={() => new Notification('MyFitnessClub', { body: `¡Hoy toca ${dia?.enfoque || 'entrenar'}! 💪`, icon: '/icon-192.png' })}
+                        onClick={() => new Notification('TrainClub', { body: `¡Hoy toca ${dia?.enfoque || 'entrenar'}! 💪`, icon: '/icon-192.png' })}
                         style={{ padding: '10px 16px', borderRadius: 12, border: '1.5px solid #6366f1', background: '#eef2ff', color: '#6366f1', fontSize: 13, fontWeight: 700, cursor: 'pointer', width: '100%' }}>
                         Probar notificación ahora
                       </button>

@@ -1,6 +1,6 @@
 {
-  "name": "MyFitnessClub",
-  "short_name": "MyFitnessClub",
+  "name": "TrainClub",
+  "short_name": "TrainClub",
   "description": "Rutina de entrenamiento 5 días",
   "start_url": "/",
   "display": "standalone",
