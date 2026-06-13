@@ -279,6 +279,7 @@ export default function App() {
   const [actividadModal, setActividadModal] = useState(false)
   const [actForm, setActForm] = useState({ tipo: 'correr', minutos: '', km: '' })
   const [revisionBanner, setRevisionBanner] = useState(null)
+  const [editandoPerfil, setEditandoPerfil] = useState(false)
   // null = cargando, false = no hay sesión, objeto = sesión activa
   const [authSession, setAuthSession] = useState(null)
   const saveTimer = useRef(null)
@@ -1337,33 +1338,69 @@ export default function App() {
                 <div style={{ marginBottom: 10 }}>
                   {/* Perfil de entrenamiento */}
                   <div style={{ ...S.card, padding: 16, marginBottom: 10, background: '#eef2ff', border: '1px solid #c7d2fe' }}>
-                    <div style={{ fontSize: 14, fontWeight: 800, color: '#6366f1', marginBottom: 10 }}>🧠 Tu perfil de entrenamiento</div>
-                    <div style={{ display: 'flex', gap: 10 }}>
-                      <div style={{ flex: 1, background: '#fff', borderRadius: 12, padding: '10px 12px', textAlign: 'center' }}>
-                        <div style={{ fontSize: 22 }}>{objInfo?.icon}</div>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: '#6366f1', marginTop: 4 }}>{objInfo?.nombre}</div>
-                        <div style={{ fontSize: 10, color: '#8e8e93' }}>Objetivo</div>
-                      </div>
-                      <div style={{ flex: 1, background: '#fff', borderRadius: 12, padding: '10px 12px', textAlign: 'center' }}>
-                        <div style={{ fontSize: 22 }}>{nivInfo?.icon}</div>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: '#6366f1', marginTop: 4 }}>{nivInfo?.nombre}</div>
-                        <div style={{ fontSize: 10, color: '#8e8e93' }}>Nivel</div>
-                      </div>
-                      <div style={{ flex: 1, background: '#fff', borderRadius: 12, padding: '10px 12px', textAlign: 'center' }}>
-                        <div style={{ fontSize: 18, fontWeight: 800, color: '#6366f1' }}>{params.reps}</div>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: '#6366f1', marginTop: 4 }}>Reps</div>
-                        <div style={{ fontSize: 10, color: '#8e8e93' }}>Rango óptimo</div>
-                      </div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                      <div style={{ fontSize: 14, fontWeight: 800, color: '#6366f1' }}>🧠 Tu perfil de entrenamiento</div>
+                      <button onClick={() => setEditandoPerfil(e => !e)} style={{ fontSize: 12, fontWeight: 700, background: editandoPerfil ? '#6366f1' : '#fff', color: editandoPerfil ? '#fff' : '#6366f1', border: '1.5px solid #6366f1', borderRadius: 20, padding: '4px 12px', cursor: 'pointer' }}>
+                        {editandoPerfil ? 'Listo' : 'Editar'}
+                      </button>
                     </div>
-                    <div style={{ marginTop: 10, background: '#fff', borderRadius: 12, padding: '10px 14px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#3c3c43', flexWrap: 'wrap', gap: 8 }}>
-                        <span>📊 <b>{params.series}</b> series/ejercicio</span>
-                        <span>💤 RIR <b>{params.rir}</b> (reps en reserva)</span>
-                        <span>🏃 <b>{params.cardioSemana}</b> cardios/sem</span>
-                        <span>⚡ Deload cada <b>{params.deloadSemanas}</b> sem</span>
-                      </div>
-                      <div style={{ fontSize: 11, color: '#8e8e93', marginTop: 6 }}>Intensidad recomendada: {params.intensidad}</div>
-                    </div>
+
+                    {editandoPerfil ? (
+                      <>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: '#6366f1', marginBottom: 8 }}>Objetivo</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+                          {OBJETIVOS.map(o => (
+                            <button key={o.id} onClick={() => updateUser({ objetivo: o.id })}
+                              style={{ padding: '10px 14px', borderRadius: 12, border: (user?.objetivo || 'recomposicion') === o.id ? '2px solid #6366f1' : '2px solid #e5e5ea', background: (user?.objetivo || 'recomposicion') === o.id ? '#eef2ff' : '#fff', cursor: 'pointer', textAlign: 'left', display: 'flex', alignItems: 'center', gap: 10 }}>
+                              <span style={{ fontSize: 22 }}>{o.icon}</span>
+                              <div>
+                                <div style={{ fontSize: 14, fontWeight: 700, color: (user?.objetivo || 'recomposicion') === o.id ? '#6366f1' : '#1c1c1e' }}>{o.nombre}</div>
+                                <div style={{ fontSize: 11, color: '#8e8e93' }}>{o.desc}</div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: '#6366f1', marginBottom: 8 }}>Nivel</div>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          {NIVELES.map(n => (
+                            <button key={n.id} onClick={() => updateUser({ nivel: n.id })}
+                              style={{ flex: 1, padding: '10px 8px', borderRadius: 12, border: (user?.nivel || 'intermedio') === n.id ? '2px solid #6366f1' : '2px solid #e5e5ea', background: (user?.nivel || 'intermedio') === n.id ? '#eef2ff' : '#fff', cursor: 'pointer', textAlign: 'center' }}>
+                              <div style={{ fontSize: 22 }}>{n.icon}</div>
+                              <div style={{ fontSize: 12, fontWeight: 700, color: (user?.nivel || 'intermedio') === n.id ? '#6366f1' : '#1c1c1e', marginTop: 4 }}>{n.nombre}</div>
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div style={{ display: 'flex', gap: 10 }}>
+                          <div style={{ flex: 1, background: '#fff', borderRadius: 12, padding: '10px 12px', textAlign: 'center' }}>
+                            <div style={{ fontSize: 22 }}>{objInfo?.icon}</div>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: '#6366f1', marginTop: 4 }}>{objInfo?.nombre}</div>
+                            <div style={{ fontSize: 10, color: '#8e8e93' }}>Objetivo</div>
+                          </div>
+                          <div style={{ flex: 1, background: '#fff', borderRadius: 12, padding: '10px 12px', textAlign: 'center' }}>
+                            <div style={{ fontSize: 22 }}>{nivInfo?.icon}</div>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: '#6366f1', marginTop: 4 }}>{nivInfo?.nombre}</div>
+                            <div style={{ fontSize: 10, color: '#8e8e93' }}>Nivel</div>
+                          </div>
+                          <div style={{ flex: 1, background: '#fff', borderRadius: 12, padding: '10px 12px', textAlign: 'center' }}>
+                            <div style={{ fontSize: 18, fontWeight: 800, color: '#6366f1' }}>{params.reps}</div>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: '#6366f1', marginTop: 4 }}>Reps</div>
+                            <div style={{ fontSize: 10, color: '#8e8e93' }}>Rango óptimo</div>
+                          </div>
+                        </div>
+                        <div style={{ marginTop: 10, background: '#fff', borderRadius: 12, padding: '10px 14px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#3c3c43', flexWrap: 'wrap', gap: 8 }}>
+                            <span>📊 <b>{params.series}</b> series/ejercicio</span>
+                            <span>💤 RIR <b>{params.rir}</b> (reps en reserva)</span>
+                            <span>🏃 <b>{params.cardioSemana}</b> cardios/sem</span>
+                            <span>⚡ Deload cada <b>{params.deloadSemanas}</b> sem</span>
+                          </div>
+                          <div style={{ fontSize: 11, color: '#8e8e93', marginTop: 6 }}>Intensidad recomendada: {params.intensidad}</div>
+                        </div>
+                      </>
+                    )}
                   </div>
 
                   {/* Ciclo recomendado */}

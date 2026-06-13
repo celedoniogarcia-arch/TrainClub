@@ -9,6 +9,8 @@ function rowToProfile(row) {
     avatar: row.avatar,
     cicloActual: row.ciclo_actual || 'hiper',
     cicloSemanaInicio: row.ciclo_semana_inicio || null,
+    objetivo: row.objetivo || null,
+    nivel: row.nivel || null,
   }
 }
 
@@ -19,6 +21,8 @@ function profileToRow(profile) {
     avatar: profile.avatar,
     ciclo_actual: profile.cicloActual || 'hiper',
     ciclo_semana_inicio: profile.cicloSemanaInicio || null,
+    objetivo: profile.objetivo || null,
+    nivel: profile.nivel || null,
   }
 }
 
