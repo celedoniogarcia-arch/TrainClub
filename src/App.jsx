@@ -561,8 +561,10 @@ export default function App() {
     setUd({ ...ud, alternativasActivas: nuevas })
   }
 
-  // ── Aplicar correcciones desde alertas ───────────────────────────────────
   // ── Helpers de corrección ─────────────────────────────────────────────────
+  // Máximo de series por ejercicio individual (RP: 4-5 sets/ej para hipertrofia)
+  const MAX_SERIES_POR_EJ = 5
+
   function calcularSeriesBaseGrupo() {
     const base = {}
     DIAS.forEach(d => d.ejercicios.forEach(ej => {
@@ -570,6 +572,21 @@ export default function App() {
       base[g] = (base[g] || 0) + ej.series
     }))
     return base
+  }
+
+  // Calcula cuántas series extra (por ejercicio) pueden añadirse sin superar 5 por ejercicio.
+  // Divide el déficit semanal entre el número de ocurrencias del músculo en la rutina.
+  function calcularExtraSeguro(grupo, extraSemanal) {
+    // Ejercicios de ese grupo en todo el plan
+    const ejerciciosGrupo = DIAS.flatMap(d =>
+      d.ejercicios.filter(ej => normalizarMusculo(ej.musculo) === grupo)
+    )
+    if (ejerciciosGrupo.length === 0) return 0
+    // Extra por ejercicio: dividir el déficit semanal entre las ocurrencias
+    const extraPorEj = Math.ceil(extraSemanal / ejerciciosGrupo.length)
+    // Cap: ningún ejercicio puede superar MAX_SERIES_POR_EJ
+    const maxBase = Math.max(...ejerciciosGrupo.map(e => e.series))
+    return Math.min(extraPorEj, MAX_SERIES_POR_EJ - maxBase)
   }
 
   function aplicarCorreccionAlerta(alerta) {
@@ -588,9 +605,10 @@ export default function App() {
     } else if (alerta.tipo === 'volumen_bajo' && alerta.musculo) {
       const baseGrupo = calcularSeriesBaseGrupo()
       const base = baseGrupo[alerta.musculo] || 0
-      const extra = Math.min(Math.max(0, MEV - base), MRV - base)
-      if (extra > 0) {
-        setUd({ ...ud, seriesExtra: { ...(ud.seriesExtra || {}), [alerta.musculo]: extra } })
+      const extraSemanal = Math.min(Math.max(0, MEV - base), MRV - base)
+      const extraPorEj = calcularExtraSeguro(alerta.musculo, extraSemanal)
+      if (extraPorEj > 0) {
+        setUd({ ...ud, seriesExtra: { ...(ud.seriesExtra || {}), [alerta.musculo]: extraPorEj } })
       }
     }
   }
@@ -613,8 +631,9 @@ export default function App() {
           nuevasAlts[alerta.ejId] = candidatos[Math.floor(Math.random() * candidatos.length)]
       } else if (alerta.tipo === 'volumen_bajo' && alerta.musculo) {
         const base = baseGrupo[alerta.musculo] || 0
-        const extra = Math.min(Math.max(0, MEV - base), MRV - base)
-        if (extra > 0) nuevoExtra[alerta.musculo] = extra
+        const extraSemanal = Math.min(Math.max(0, MEV - base), MRV - base)
+        const extraPorEj = calcularExtraSeguro(alerta.musculo, extraSemanal)
+        if (extraPorEj > 0) nuevoExtra[alerta.musculo] = extraPorEj
       }
     }
     setUd({ ...ud, alternativasActivas: nuevasAlts, seriesExtra: nuevoExtra })
@@ -856,7 +875,7 @@ export default function App() {
               // Series efectivas = series del ciclo + extras (busca por etiqueta o grupo normalizado)
               const grupoMuscular = normalizarMusculo(ej.musculo)
               const seriesExtra = (ud.seriesExtra || {})[ej.musculo] || (ud.seriesExtra || {})[grupoMuscular] || 0
-              const seriesEfectivas = ej.series + seriesExtra
+              const seriesEfectivas = Math.min(ej.series + seriesExtra, MAX_SERIES_POR_EJ)
               // El ejercicio a mostrar puede ser el original o una alternativa seleccionada
               const ejMostrado = altActiva ? { ...ej, nombre: altActiva.nombre, gif: altActiva.gif, musculo: altActiva.musculo } : ej
               const max = getMaxValor(ej.id, ej.tipo)
