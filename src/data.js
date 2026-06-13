@@ -797,4 +797,161 @@ export function matchMusculo(ejMusculo) {
   return null
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ADAPTACIÓN POR PERFIL FÍSICO (edad, IMC, sexo)
+//
+// Fuentes aplicadas:
+//   · ACSM Guidelines for Exercise Testing & Prescription, 11ª ed. (2022)
+//   · ACE Personal Trainer Manual, 5ª ed. — capítulos senior fitness
+//   · RP Strength: "Training the Older Lifter" — Israetel & Hoffmann
+//   · NSCA Essentials of Strength Training, 4ª ed. — Ch. 20 (Special Pops)
+//   · NIH PMC8878739 — Sarcopenia prevention exercise guidelines 60+
+//   · Obesity & Exercise: ACSM Position Stand (2009, actualizado 2021)
+//
+// Reglas clave implementadas:
+//   50+  → sustituir barbell compounds por mancuernas/máquina (↓ carga axial)
+//   60+  → ejercicios de equilibrio, RIR≥3, sin fallo absoluto
+//   70+  → 60-70% FCmax, carga 50-60% 1RM, control sobre intensidad
+//   IMC≥30 → sin saltos ni HIIT de alto impacto, cardio de bajo impacto
+//   IMC≥35 → cardio sentado (bici, remo), ejercicios apoyados preferidos
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Ejercicios sustitutos seguros por zona de edad/IMC
+// Criterio: misma cadena muscular, menor compresión espinal y estrés articular
+const EJ_SUSTITUTOS = {
+  // Sentadilla barra → Prensa 45° (elimina carga axial espinal)
+  sq: {
+    id: 'pr', nombre: 'Prensa 45°', musculo: 'Cuádriceps, glúteos',
+    tipo: 'peso', gif: G.pr,
+    tip: 'Alternativa segura a la sentadilla con barra: sin carga axial en la columna. Pies en ancho de hombros. No bloquees rodillas en la extensión.',
+    alternativas: [{ nombre: 'Sentadilla goblet con kettlebell', musculo: 'Cuádriceps/Glúteos' }],
+  },
+  // Press banca barra → Press mancuernas (rango libre, menor estrés glenohumeral)
+  pb: {
+    id: 'pman', nombre: 'Press mancuernas banco plano', musculo: 'Pecho (fibras medias)',
+    tipo: 'peso', gif: G.pman,
+    tip: 'Las mancuernas permiten un arco articular más natural que la barra, reduciendo el estrés en el hombro y la muñeca.',
+    alternativas: [{ nombre: 'Press en máquina de pecho', musculo: 'Pecho' }],
+  },
+  // Remo barra → Remo polea sentado (elimina carga lumbar estática)
+  rb: {
+    id: 'rs', nombre: 'Remo sentado en polea', musculo: 'Espalda media',
+    tipo: 'peso', gif: G.rs,
+    tip: 'Sin carga axial en la columna lumbar. Espalda erguida, pecho al frente, codos pegados al cuerpo. Tira al ombligo.',
+    alternativas: [{ nombre: 'Remo mancuerna unilateral apoyado', musculo: 'Espalda media' }],
+  },
+  // Press militar barra de pie → Press mancuernas sentado (elimina riesgo de equilibrio)
+  pm: {
+    id: 'pm', nombre: 'Press mancuernas sentado', musculo: 'Deltoides anterior',
+    tipo: 'peso', gif: G.pm,
+    tip: 'Realiza el press SENTADO en banco con respaldo. Reduce el riesgo de caída y la carga lumbar en comparación con el press de pie.',
+    alternativas: [{ nombre: 'Press en máquina de hombros', musculo: 'Deltoides anterior' }],
+  },
+}
+
+function getZonaEdad(edad) {
+  const e = Number(edad) || 0
+  if (!e) return null
+  if (e < 40) return 'joven'         // Sin restricciones por edad
+  if (e < 50) return 'adulto'        // Leve énfasis en recuperación
+  if (e < 60) return 'maduro'        // Sustituir barbell → mancuerna/máquina
+  if (e < 70) return 'senior'        // Bajo impacto, RPE controlado, equilibrio
+  return 'senior_plus'               // Funcional, ligero, impacto mínimo
+}
+
+function getZonaBmi(pesoKg, alturaCm) {
+  const p = Number(pesoKg) || 0
+  const h = Number(alturaCm) || 0
+  if (!p || !h) return null
+  const bmi = p / ((h / 100) ** 2)
+  if (bmi < 25)   return 'normal'
+  if (bmi < 30)   return 'sobrepeso'
+  if (bmi < 35)   return 'obeso1'
+  return 'obeso2'
+}
+
+function adaptarCardio(cardio, zonaEdad, zonaBmi) {
+  if (!cardio) return cardio
+  let c = cardio
+  const altaRestriccion = ['senior', 'senior_plus'].includes(zonaEdad) || zonaBmi === 'obeso2'
+  const moderadaRestriccion = zonaEdad === 'maduro' || zonaBmi === 'obeso1'
+
+  if (altaRestriccion) {
+    // ACSM: 60+ y obesos mórbidos → cardio de baja intensidad, zona 2 estricta
+    c = c.replace(/HIIT[^.–)·\n]*/gi, 'Cardio suave (HIIT no recomendado para tu perfil físico)')
+    c = c.replace(/\b(sprint|sprints)\b/gi, 'caminata rápida')
+    c = c.replace(/\d+%\s*FCmax/gi, '60-70% FCmax')
+    c = c.replace(/×\s*\d+\s*rondas/gi, '')
+  } else if (moderadaRestriccion) {
+    // ACSM: 50+ y sobrepeso → limitar picos de FCmax
+    c = c.replace(/\b(85|90|95)%\s*FCmax/gi, '75-80% FCmax')
+    c = c.replace(/\bsprint\b/gi, 'trote moderado')
+  }
+  return c
+}
+
+// ── Calcula el perfil físico del usuario ──────────────────────────────────────
+export function calcularPerfilFisico(datosUsuario = {}) {
+  const { edad, pesoActual, altura, sexo } = datosUsuario
+  const e = Number(edad) || 0
+  const p = Number(pesoActual) || 0
+  const h = Number(altura) || 0
+  const bmi = (p && h) ? +(p / ((h / 100) ** 2)).toFixed(1) : null
+  const zonaEdad = getZonaEdad(e)
+  const zonaBmi  = getZonaBmi(p, h)
+  const tieneDatos = !!(e && p && h)
+
+  return { zonaEdad, zonaBmi, bmi, edad: e, pesoKg: p, alturaCm: h, sexo, tieneDatos }
+}
+
+// ── Adapta la rutina a los datos físicos del usuario ─────────────────────────
+// Devuelve los días modificados con:
+//   · Ejercicios de alto riesgo sustituidos por alternativas más seguras
+//   · Cardio ajustado a la FCmax segura para la edad/IMC
+//   · Tips enriquecidos con pautas específicas de la zona
+export function adaptarDiasAlPerfil(dias, datosUsuario = {}) {
+  const perfil = calcularPerfilFisico(datosUsuario)
+  const { zonaEdad, zonaBmi, tieneDatos } = perfil
+
+  if (!tieneDatos) return dias  // Sin datos físicos no se adapta
+
+  const esMaduro    = ['maduro', 'senior', 'senior_plus'].includes(zonaEdad)
+  const esSenior    = ['senior', 'senior_plus'].includes(zonaEdad)
+  const esSeniorPlus = zonaEdad === 'senior_plus'
+  const altoPeso    = ['obeso1', 'obeso2'].includes(zonaBmi)
+  const debesSustituir = esMaduro || altoPeso
+
+  return dias.map(dia => ({
+    ...dia,
+    cardio: adaptarCardio(dia.cardio, zonaEdad, zonaBmi),
+    _perfil: { zonaEdad, zonaBmi },
+    ejercicios: dia.ejercicios.map(ej => {
+      // 1. Sustituir ejercicios de alta carga axial/articular cuando procede
+      if (debesSustituir && EJ_SUSTITUTOS[ej.id]) {
+        const sust = EJ_SUSTITUTOS[ej.id]
+        return {
+          ...sust,
+          series: ej.series,
+          reps: ej.reps,
+          _sustituido: ej.nombre,  // para mostrar badge en UI
+        }
+      }
+
+      // 2. Enriquecer el tip con pautas de la zona de edad
+      let tipExtra = ''
+      if (esSeniorPlus) {
+        tipExtra = ' · 70+: usa el 50-60% de tu carga máxima. Prioriza control total. Descansa 2 min entre series.'
+      } else if (esSenior) {
+        tipExtra = ' · 60+: RIR≥3 (nunca al fallo). Descanso 90-120 s. Calentamiento articular de 10 min previo.'
+      } else if (esMaduro) {
+        tipExtra = ' · 50+: calienta 8-10 min antes de cargar. RIR≥2. Si hay dolor articular, usa alternativas.'
+      } else if (altoPeso) {
+        tipExtra = ' · IMC elevado: prioriza la técnica sobre la carga. Descansa 90 s entre series.'
+      }
+
+      return tipExtra ? { ...ej, tip: ej.tip + tipExtra } : ej
+    }),
+  }))
+}
+
 export const AVATARS = ['💪', '🏃', '🧘', '🏋️', '⚡', '🦁', '🔥', '🌟']

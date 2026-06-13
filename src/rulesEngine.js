@@ -85,7 +85,7 @@ const PROGRESION = {
 const COMPUESTOS = ['Pecho', 'Espalda', 'Pierna', 'Hombros']
 
 // ── Función principal: genera todas las recomendaciones ───────────────────────
-export function generarRecomendaciones({ objetivo, nivel, semanasCiclo, registros, histPeso, actividades, DIAS, seriesExtra }) {
+export function generarRecomendaciones({ objetivo, nivel, semanasCiclo, registros, histPeso, actividades, DIAS, seriesExtra, perfilFisico }) {
   const obj = objetivo || 'recomposicion'
   const niv = nivel || 'intermedio'
   const params = PARAMS[obj]?.[niv] || PARAMS.recomposicion.intermedio
@@ -107,7 +107,7 @@ export function generarRecomendaciones({ objetivo, nivel, semanasCiclo, registro
   const volumenMuscular = calcularVolumenMuscular(DIAS, registros, seriesExtra || {})
 
   // ── Alertas ──────────────────────────────────────────────────────────────────
-  const alertas = generarAlertas({ semanasCiclo, params, volumenMuscular, vol, registros, DIAS, actividades, obj })
+  const alertas = generarAlertas({ semanasCiclo, params, volumenMuscular, vol, registros, DIAS, actividades, obj, perfilFisico })
 
   // ── Ciclo recomendado ────────────────────────────────────────────────────────
   const cicloRecomendado = calcularCicloRecomendado({ semanasCiclo, params, obj, niv, volumenMuscular, vol })
@@ -304,8 +304,47 @@ function calcularCicloRecomendado({ semanasCiclo, params, obj, niv, volumenMuscu
 }
 
 // ── Generar alertas de entrenamiento ─────────────────────────────────────────
-function generarAlertas({ semanasCiclo, params, volumenMuscular, vol, registros, DIAS, actividades, obj }) {
+function generarAlertas({ semanasCiclo, params, volumenMuscular, vol, registros, DIAS, actividades, obj, perfilFisico }) {
   const alertas = []
+
+  // Alertas por perfil físico (edad / IMC)
+  if (perfilFisico?.tieneDatos) {
+    const { zonaEdad, zonaBmi, bmi, edad } = perfilFisico
+
+    if (zonaEdad === 'senior_plus') {
+      alertas.push({
+        tipo: 'perfil_edad', prioridad: 'alta',
+        titulo: '🦴 Rutina adaptada para 70+ años',
+        desc: `Con ${edad} años, tu rutina usa cargas del 50-60% 1RM, sin ejercicios de alto impacto y con énfasis en control del movimiento (ACSM). Los ejercicios de barra han sido sustituidos por alternativas más seguras.`,
+      })
+    } else if (zonaEdad === 'senior') {
+      alertas.push({
+        tipo: 'perfil_edad', prioridad: 'alta',
+        titulo: '🦴 Rutina adaptada para 60-69 años',
+        desc: `Con ${edad} años, tus ejercicios de barra han sido reemplazados por mancuernas y máquinas para reducir la carga articular. RIR mínimo 3 en todos los ejercicios (ACSM + RP Strength).`,
+      })
+    } else if (zonaEdad === 'maduro') {
+      alertas.push({
+        tipo: 'perfil_edad', prioridad: 'media',
+        titulo: '⚠️ Rutina adaptada para 50-59 años',
+        desc: `Con ${edad} años, los ejercicios de barbell de alta carga axial han sido sustituidos por alternativas con mancuernas o máquinas. Calienta 10 min antes de cada sesión.`,
+      })
+    }
+
+    if (zonaBmi === 'obeso2') {
+      alertas.push({
+        tipo: 'perfil_bmi', prioridad: 'alta',
+        titulo: '⚖️ Cardio adaptado por IMC (IMC ' + bmi + ')',
+        desc: 'Con IMC ≥35, el cardio de alto impacto (HIIT, saltos) ha sido sustituido por cardio de bajo impacto: bicicleta, remo o elíptica. Protege tus articulaciones (ACSM Obesity Position Stand).',
+      })
+    } else if (zonaBmi === 'obeso1') {
+      alertas.push({
+        tipo: 'perfil_bmi', prioridad: 'media',
+        titulo: '⚖️ Rutina adaptada por IMC (IMC ' + bmi + ')',
+        desc: 'Con IMC ≥30, la intensidad del cardio se ha reducido y se priorizan ejercicios con menor impacto articular.',
+      })
+    }
+  }
 
   // Alerta deload
   if (semanasCiclo >= params.deloadSemanas) {

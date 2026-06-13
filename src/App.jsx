@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { CICLOS, PLATOS, PLATOS_PREPARADOS, AVATARS, getDiasCiclo, matchMusculo, getPlatosByObjetivo } from './data.js'
+import { CICLOS, PLATOS, PLATOS_PREPARADOS, AVATARS, getDiasCiclo, matchMusculo, getPlatosByObjetivo, adaptarDiasAlPerfil, calcularPerfilFisico } from './data.js'
 import fitcronEjercicios from './fitcron_exercises.json'
 import { getProfiles, upsertProfile, deleteProfile, getUserData, saveUserData, getDieta, saveDieta } from './db.js'
 import { OBJETIVOS, NIVELES, generarRecomendaciones, calcularNutricionObjetivo, normalizarMusculo } from './rulesEngine.js'
@@ -418,10 +418,10 @@ export default function App() {
   const user = users.find(u => u.id === userId)
   const cicloActual = user?.cicloActual || 'hiper'
   const cicloInfo = CICLOS.find(c => c.id === cicloActual) || CICLOS[0]
-  const DIAS = useMemo(
-    () => getDiasCiclo(cicloActual, user?.objetivo || 'recomposicion', user?.nivel || 'intermedio'),
-    [cicloActual, user?.objetivo, user?.nivel]
-  )
+  const DIAS = useMemo(() => {
+    const dias = getDiasCiclo(cicloActual, user?.objetivo || 'recomposicion', user?.nivel || 'intermedio')
+    return adaptarDiasAlPerfil(dias, dietaData || {})
+  }, [cicloActual, user?.objetivo, user?.nivel, dietaData?.edad, dietaData?.pesoActual, dietaData?.altura, dietaData?.sexo])
   const esFinde = selectedDate.getDay() === 0 || selectedDate.getDay() === 6
   const dia = DIAS.find(d => d.id === DOW_TO_ID[selectedDate.getDay()]) || DIAS[0]
 
@@ -683,7 +683,8 @@ export default function App() {
     actividades: ud.actividades || [],
     seriesExtra: ud.seriesExtra || {},
     DIAS,
-  }), [user?.objetivo, user?.nivel, semanasCiclo, ud.registros, ud.histPeso, ud.actividades, ud.seriesExtra, DIAS])
+    perfilFisico: calcularPerfilFisico(dietaData || {}),
+  }), [user?.objetivo, user?.nivel, semanasCiclo, ud.registros, ud.histPeso, ud.actividades, ud.seriesExtra, DIAS, dietaData?.edad, dietaData?.pesoActual, dietaData?.altura])
   const cicloCompletado = semanasCiclo >= cicloInfo.semanas
   function cambiarCiclo(id) { updateUser({ cicloActual: id, cicloSemanaInicio: getWeekKey() }); setMostrarCiclos(false); setEjAbierto(null) }
 
@@ -930,6 +931,11 @@ export default function App() {
                     <div style={{ flex: 1, textAlign: 'left' }}>
                       <div style={{ fontSize: 15, fontWeight: 700, color: '#1c1c1e' }}>{ejMostrado.nombre}</div>
                       <div style={{ fontSize: 12, color: '#8e8e93', marginTop: 2 }}>{ejMostrado.musculo}</div>
+                      {ej._sustituido && (
+                        <div style={{ fontSize: 10, fontWeight: 700, color: '#f59e0b', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '1px 6px', marginTop: 3, display: 'inline-block' }}>
+                          ⚡ Adaptado · antes: {ej._sustituido}
+                        </div>
+                      )}
                     </div>
                     <div style={{ textAlign: 'right', marginRight: 6 }}>
                       <div style={{ fontSize: 13, fontWeight: 700, color: cicloInfo.color }}>{seriesEfectivas}×{ej.tipo === 'tiempo' ? `${ej.reps}s` : ej.reps}</div>
