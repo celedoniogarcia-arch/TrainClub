@@ -102,7 +102,7 @@ export default function AuthScreen() {
       {/* Logo / marca */}
       <div style={{ textAlign: 'center', marginBottom: 32 }}>
         <div style={{ fontSize: 52, marginBottom: 8 }}>🏋️</div>
-        <div style={{ fontSize: 26, fontWeight: 800, color: '#1c1c1e' }}>RutinaGym</div>
+        <div style={{ fontSize: 26, fontWeight: 800, color: '#1c1c1e' }}>FitnessClub</div>
         <div style={{ fontSize: 14, color: '#8e8e93', marginTop: 4 }}>Tu entrenador de familia</div>
       </div>
 
