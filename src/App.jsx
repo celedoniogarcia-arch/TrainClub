@@ -280,6 +280,9 @@ export default function App() {
   const [actForm, setActForm] = useState({ tipo: 'correr', minutos: '', km: '' })
   const [revisionBanner, setRevisionBanner] = useState(null)
   const [editandoPerfil, setEditandoPerfil] = useState(false)
+  const [notifPermiso, setNotifPermiso] = useState(() =>
+    typeof Notification !== 'undefined' ? Notification.permission : 'default'
+  )
   // null = cargando, false = no hay sesión, objeto = sesión activa
   const [authSession, setAuthSession] = useState(null)
   const saveTimer = useRef(null)
@@ -1406,6 +1409,41 @@ export default function App() {
                           <div style={{ fontSize: 11, color: '#8e8e93', marginTop: 6 }}>Intensidad recomendada: {params.intensidad}</div>
                         </div>
                       </>
+                    )}
+                  </div>
+
+                  {/* Notificaciones */}
+                  <div style={{ ...S.card, padding: 16, marginBottom: 10 }}>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: '#1c1c1e', marginBottom: 4 }}>🔔 Recordatorios de entreno</div>
+                    <div style={{ fontSize: 12, color: '#8e8e93', marginBottom: 12 }}>
+                      {notifPermiso === 'granted'
+                        ? 'Las notificaciones están activadas. Recibirás recordatorios los días de entreno.'
+                        : notifPermiso === 'denied'
+                        ? 'Notificaciones bloqueadas. Actívalas en los ajustes del navegador.'
+                        : 'Activa las notificaciones para recibir recordatorios diarios de entreno.'}
+                    </div>
+                    {notifPermiso !== 'granted' && notifPermiso !== 'denied' && (
+                      <button
+                        onClick={async () => {
+                          const perm = await Notification.requestPermission()
+                          setNotifPermiso(perm)
+                          if (perm === 'granted') {
+                            new Notification('RutinaGym', {
+                              body: '¡Perfecto! Te avisaremos los días de entreno.',
+                              icon: '/icon-192.png',
+                            })
+                          }
+                        }}
+                        style={{ ...S.btnPrimary('#6366f1'), borderRadius: 12, padding: '11px 16px' }}>
+                        Activar notificaciones
+                      </button>
+                    )}
+                    {notifPermiso === 'granted' && (
+                      <button
+                        onClick={() => new Notification('RutinaGym', { body: `¡Hoy toca ${dia?.enfoque || 'entrenar'}! 💪`, icon: '/icon-192.png' })}
+                        style={{ padding: '10px 16px', borderRadius: 12, border: '1.5px solid #6366f1', background: '#eef2ff', color: '#6366f1', fontSize: 13, fontWeight: 700, cursor: 'pointer', width: '100%' }}>
+                        Probar notificación ahora
+                      </button>
                     )}
                   </div>
 
