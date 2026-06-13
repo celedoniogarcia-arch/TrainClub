@@ -4,6 +4,7 @@ import fitcronEjercicios from './fitcron_exercises.json'
 import { getProfiles, upsertProfile, deleteProfile, getUserData, saveUserData, getDieta, saveDieta } from './db.js'
 import { OBJETIVOS, NIVELES, generarRecomendaciones, calcularNutricionObjetivo, normalizarMusculo } from './rulesEngine.js'
 import { supabase, getSession, onAuthStateChange, signOut } from './supabase.js'
+import { getQuoteOfDay } from './quotes.js'
 import AuthScreen from './AuthScreen.jsx'
 
 // ─── ACTIVIDADES EXTRA ───────────────────────────────────────────────────────
@@ -699,6 +700,13 @@ export default function App() {
             {user?.avatar}
           </button>
         </div>
+        {/* Frase motivacional del día */}
+        <div style={{ marginTop: 10, padding: '8px 12px', background: '#f5f5f7', borderRadius: 10 }}>
+          <div style={{ fontSize: 12, color: '#6366f1', fontStyle: 'italic', lineHeight: 1.4 }}>
+            💬 {getQuoteOfDay()}
+          </div>
+        </div>
+
         {tab === 'entreno' && (
           <button onClick={() => setMostrarCiclos(!mostrarCiclos)}
             style={{ marginTop: 12, width: '100%', padding: '10px 14px', borderRadius: 12, background: cicloInfo.bg, border: `1px solid ${cicloInfo.color}30`, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
