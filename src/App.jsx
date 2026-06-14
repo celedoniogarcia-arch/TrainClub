@@ -275,6 +275,7 @@ export default function App() {
   const [ud, setUdState] = useState({})
   const [dietaData, setDietaDataState] = useState({})
   const [pesoInput, setPesoInput] = useState('')
+  const [medidaForm, setMedidaForm] = useState({ cintura: '', cadera: '', pecho: '', biceps: '', muslo: '' })
   const [dietaCalc, setDietaCalc] = useState(null)
   const [platoAbierto, setPlatoAbierto] = useState(null)
   const [mostrarCiclos, setMostrarCiclos] = useState(false)
@@ -542,6 +543,22 @@ export default function App() {
     // Sincronizar con pesoActual en Datos para que la nutrición use el peso real
     setDietaUser({ ...dietaData, pesoActual: String(nuevoPeso) })
     setPesoInput('')
+  }
+
+  // ── Medidas corporales ──
+  const histMedidas = ud.histMedidas || []
+  const MEDIDAS_DEF = [
+    { k: 'cintura', label: 'Cintura', icon: '📏', color: '#6366f1' },
+    { k: 'cadera',  label: 'Cadera',  icon: '🍑', color: '#f97316' },
+    { k: 'pecho',   label: 'Pecho',   icon: '💪', color: '#10b981' },
+    { k: 'biceps',  label: 'Bíceps',  icon: '💪', color: '#f59e0b' },
+    { k: 'muslo',   label: 'Muslo',   icon: '🦵', color: '#8b5cf6' },
+  ]
+  function addMedida() {
+    const vals = Object.fromEntries(Object.entries(medidaForm).filter(([, v]) => v !== '').map(([k, v]) => [k, Number(v)]))
+    if (Object.keys(vals).length === 0) return
+    setUd({ ...ud, histMedidas: [...histMedidas, { fecha: new Date().toLocaleDateString('es-ES'), ...vals }] })
+    setMedidaForm({ cintura: '', cadera: '', pecho: '', biceps: '', muslo: '' })
   }
 
   // ── Progreso semanal ──
@@ -1164,6 +1181,69 @@ export default function App() {
                     onClick={() => updateUser({ nivel: n.id })}>{n.icon} {n.nombre}</button>
                 ))}
               </div>
+            </div>
+
+            {/* ── Medidas corporales ── */}
+            <div style={{ ...S.card, padding: 16, marginBottom: 10 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>📐 Medidas corporales <span style={{ fontSize: 11, color: '#8e8e93', fontWeight: 400 }}>(cm)</span></div>
+
+              {/* Últimas medidas como chips */}
+              {histMedidas.length > 0 && (() => {
+                const ultima = histMedidas.at(-1)
+                const anterior = histMedidas.length > 1 ? histMedidas.at(-2) : null
+                return (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 6, marginBottom: 14 }}>
+                    {MEDIDAS_DEF.map(({ k, label, icon, color }) => {
+                      const val = ultima[k]
+                      const prev = anterior?.[k]
+                      const delta = val && prev ? (val - prev).toFixed(1) : null
+                      if (!val) return <div key={k} style={{ background: '#f5f5f7', borderRadius: 10, padding: '8px 4px', textAlign: 'center' }}><div style={{ fontSize: 14 }}>{icon}</div><div style={{ fontSize: 9, color: '#8e8e93', marginTop: 2 }}>{label}</div><div style={{ fontSize: 11, color: '#aeaeb2' }}>—</div></div>
+                      return (
+                        <div key={k} style={{ background: `${color}12`, borderRadius: 10, padding: '8px 4px', textAlign: 'center', border: `1px solid ${color}30` }}>
+                          <div style={{ fontSize: 14 }}>{icon}</div>
+                          <div style={{ fontSize: 9, color, fontWeight: 700, marginTop: 2 }}>{label}</div>
+                          <div style={{ fontSize: 14, fontWeight: 800, color: '#1c1c1e' }}>{val}</div>
+                          {delta !== null && <div style={{ fontSize: 9, color: Number(delta) <= 0 ? '#10b981' : '#f97316', fontWeight: 600 }}>{Number(delta) > 0 ? '+' : ''}{delta}</div>}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })()}
+
+              {/* Formulario de registro */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                {MEDIDAS_DEF.map(({ k, label }) => (
+                  <div key={k}>
+                    <div style={S.label}>{label} (cm)</div>
+                    <input type="number" inputMode="decimal" placeholder="—"
+                      value={medidaForm[k]} onChange={e => setMedidaForm(f => ({ ...f, [k]: e.target.value }))}
+                      style={{ ...S.input, textAlign: 'center' }} />
+                  </div>
+                ))}
+              </div>
+              <button onClick={addMedida} style={{ ...S.btnPrimary('#6366f1'), borderRadius: 12 }}>
+                Guardar medidas
+              </button>
+
+              {/* Historial compacto */}
+              {histMedidas.length > 1 && (
+                <div style={{ marginTop: 14 }}>
+                  <div style={{ fontSize: 12, color: '#8e8e93', fontWeight: 600, marginBottom: 8 }}>HISTORIAL</div>
+                  {[...histMedidas].reverse().slice(0, 6).map((m, i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderTop: i > 0 ? '1px solid #f2f2f7' : 'none' }}>
+                      <span style={{ fontSize: 12, color: '#8e8e93' }}>{m.fecha}</span>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        {MEDIDAS_DEF.filter(({ k }) => m[k]).map(({ k, label, color }) => (
+                          <span key={k} style={{ fontSize: 11, fontWeight: 700, color, background: `${color}15`, padding: '2px 7px', borderRadius: 8 }}>
+                            {label[0]}: {m[k]}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* ── Log de peso ── */}
