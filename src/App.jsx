@@ -6,7 +6,7 @@ import { OBJETIVOS, NIVELES, generarRecomendaciones, calcularNutricionObjetivo, 
 import { supabase, getSession, onAuthStateChange, signOut } from './supabase.js'
 import { getQuoteOfDay } from './quotes.js'
 import AuthScreen from './AuthScreen.jsx'
-import Onboarding from './Onboarding.jsx'
+import Onboarding, { ONBOARDING_VERSION } from './Onboarding.jsx'
 
 // ─── ACTIVIDADES EXTRA ───────────────────────────────────────────────────────
 
@@ -709,7 +709,7 @@ export default function App() {
           await upsertProfile(vinculado)
         }
         setUserId(u.id); setTab('entreno')
-        if (!localStorage.getItem(`onboarding_visto_${u.id}`)) setShowOnboarding(true)
+        if (!localStorage.getItem(`onboarding_v${ONBOARDING_VERSION}_${u.id}`)) setShowOnboarding(true)
       }}
       onCreate={async u => {
         // Solo vincular al auth user si no hay ya un perfil vinculado — evita que perfiles de prueba roben el auto-login
@@ -1896,7 +1896,7 @@ export default function App() {
       {/* ONBOARDING */}
       {showOnboarding && (
         <Onboarding onFinish={() => {
-          localStorage.setItem(`onboarding_visto_${userId}`, '1')
+          localStorage.setItem(`onboarding_v${ONBOARDING_VERSION}_${userId}`, '1')
           setShowOnboarding(false)
         }} />
       )}

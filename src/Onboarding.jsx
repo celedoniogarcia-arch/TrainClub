@@ -1,5 +1,8 @@
 import { useState } from 'react'
 
+// Incrementa este número cada vez que quieras que la guía vuelva a aparecer
+export const ONBOARDING_VERSION = 1
+
 const TABS_NAV = [
   { id: 'entreno',  icon: '🏋️', label: 'Entreno'  },
   { id: 'datos',    icon: '📊',  label: 'Datos'    },
