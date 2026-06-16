@@ -943,12 +943,17 @@ export default function App() {
                       const esSeleccionado = fecha.getTime() === selectedDate.getTime()
                       const diaPlantilla = DIAS.find(d => d.id === DOW_TO_ID[dow])
                       const tieneEntreno = !esFindeSlot && !!diaPlantilla
+                      const fechaKeyStr = fecha.toLocaleDateString('es-ES')
+                      const yaEntrenoEseDia = Object.values(registros).some(ej => ej[fechaKeyStr] && Object.keys(ej[fechaKeyStr]).length > 0)
                       return (
                         <button key={i} onClick={() => { setSelectedDate(fecha); setEjAbierto(null); setAltAbierta(null) }}
                           style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, padding: '8px 4px', borderRadius: 12, border: esHoy && !esSeleccionado ? `2px solid ${cicloInfo.color}` : '2px solid transparent', cursor: 'pointer', background: esSeleccionado ? cicloInfo.color : 'transparent', transition: 'all .15s' }}>
                           <span style={{ fontSize: 10, fontWeight: 600, color: esSeleccionado ? '#fff' : '#8e8e93' }}>{DIAS_SEMANA_LABEL[dow]}</span>
                           <span style={{ fontSize: 17, fontWeight: 800, color: esSeleccionado ? '#fff' : esHoy ? cicloInfo.color : '#1c1c1e' }}>{fecha.getDate()}</span>
-                          <span style={{ fontSize: 13, lineHeight: 1 }}>{esFindeSlot ? '🏖️' : tieneEntreno ? diaPlantilla.emoji : '·'}</span>
+                          {yaEntrenoEseDia
+                            ? <span style={{ fontSize: 11, lineHeight: 1, color: esSeleccionado ? '#fff' : '#10b981' }}>✓</span>
+                            : <span style={{ fontSize: 13, lineHeight: 1 }}>{esFindeSlot ? '🏖️' : tieneEntreno ? diaPlantilla.emoji : '·'}</span>
+                          }
                         </button>
                       )
                     })}
@@ -963,12 +968,17 @@ export default function App() {
               const hoy = startOfDay(new Date())
               const esHoy = fecha.getTime() === hoy.getTime()
               const fechaStr = fecha.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })
+              const fechaKeyStr = fecha.toLocaleDateString('es-ES')
+              const yaEntrenoEseDia = Object.values(registros).some(ej => ej[fechaKeyStr] && Object.keys(ej[fechaKeyStr]).length > 0)
               if (esFinde) return (
                 <div style={{ ...S.card, background: '#ecfdf5', marginBottom: 12 }}>
                   <div style={{ padding: 16 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div style={{ fontSize: 20, fontWeight: 800, color: '#10b981' }}>🏖️ Descanso activo</div>
-                      {esHoy && <span style={{ fontSize: 11, fontWeight: 700, background: '#10b981', color: '#fff', padding: '3px 10px', borderRadius: 20 }}>Hoy</span>}
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        {yaEntrenoEseDia && <span style={{ fontSize: 11, fontWeight: 700, background: '#10b981', color: '#fff', padding: '3px 10px', borderRadius: 20 }}>✓ Entrenado</span>}
+                        {esHoy && <span style={{ fontSize: 11, fontWeight: 700, background: '#10b981', color: '#fff', padding: '3px 10px', borderRadius: 20 }}>Hoy</span>}
+                      </div>
                     </div>
                     <div style={{ fontSize: 12, color: '#10b981', marginTop: 4, fontWeight: 500, textTransform: 'capitalize' }}>{fechaStr}</div>
                     <div style={{ marginTop: 8, fontSize: 12, color: '#8e8e93' }}>💤 Sin pesas hoy — registra actividades como pádel, ruta, bici…</div>
@@ -980,7 +990,10 @@ export default function App() {
                   <div style={{ padding: 16 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div style={{ fontSize: 20, fontWeight: 800, color: cicloInfo.color }}>{dia.emoji} {dia.enfoque}</div>
-                      {esHoy && <span style={{ fontSize: 11, fontWeight: 700, background: cicloInfo.color, color: '#fff', padding: '3px 10px', borderRadius: 20 }}>Hoy</span>}
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        {yaEntrenoEseDia && <span style={{ fontSize: 11, fontWeight: 700, background: '#10b981', color: '#fff', padding: '3px 10px', borderRadius: 20 }}>✓ Entrenado</span>}
+                        {esHoy && <span style={{ fontSize: 11, fontWeight: 700, background: cicloInfo.color, color: '#fff', padding: '3px 10px', borderRadius: 20 }}>Hoy</span>}
+                      </div>
                     </div>
                     <div style={{ fontSize: 12, color: cicloInfo.color, marginTop: 4, fontWeight: 500, textTransform: 'capitalize' }}>{fechaStr}</div>
                     {dia.circuito && <div style={{ marginTop: 6, fontSize: 12, fontWeight: 700, color: cicloInfo.color }}>⚡ CIRCUITO – {dia.vueltas} VUELTAS · descanso 2 min</div>}
