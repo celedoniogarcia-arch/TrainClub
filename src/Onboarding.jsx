@@ -3,7 +3,7 @@ import { CHANGELOG } from './changelog.js'
 
 // Incrementa este número cada vez que quieras que la guía vuelva a aparecer.
 // Añade la entrada correspondiente en changelog.js antes de subir.
-export const ONBOARDING_VERSION = 2
+export const ONBOARDING_VERSION = 3
 
 const TABS_NAV = [
   { id: 'entreno',  icon: '🏋️', label: 'Entreno'  },

@@ -1,3 +1,5 @@
+import { CATALOGO, resolverIdCatalogo, sufijoPlantilla } from './catalogo.js'
+
 // tipo: 'peso'|'tiempo'|'reps'|'peso_reps'
 // Días: principiante=Lun/Mié/Vie · intermedio=Lun/Mar/Jue/Vie · avanzado=Lun-Vie
 
@@ -525,6 +527,16 @@ const TEMPLATES = {
   fuerza_avanzado:           FUERZA_AVANZADO,
 }
 
+// Sustituye id/nombre/GIF de la plantilla por la ficha canónica del catálogo.
+// Garantiza que la imagen corresponde al ejercicio y que cada ejercicio tiene
+// su propio historial (antes 'cb' era a la vez curl EZ, concentrado y mancuernas).
+function conCatalogo(ej) {
+  const catId = resolverIdCatalogo(ej.id, ej.nombre)
+  const cat = catId && CATALOGO[catId]
+  if (!cat) return { ...ej, metrica: ej.tipo === 'tiempo' ? 'seg' : ej.tipo === 'reps' ? 'reps' : 'kg_reps', legacyId: ej.id }
+  return { ...ej, id: cat.id, legacyId: ej.id, nombre: cat.nombre + sufijoPlantilla(ej.nombre), gif: cat.gif, metrica: cat.metrica, grupo: cat.grupo }
+}
+
 // Genera los días ajustados al ciclo actual y al perfil del usuario
 export function getDiasCiclo(cicloId, objetivo = 'recomposicion', nivel = 'intermedio') {
   const mod = MOD[cicloId] || MOD.hiper
@@ -548,7 +560,7 @@ export function getDiasCiclo(cicloId, objetivo = 'recomposicion', nivel = 'inter
         repsAjustadas = mod.repsMod || ej.reps
       }
       const tipFinal = (!isDeload && userMod.tipExtra) ? `${ej.tip} · ${userMod.tipExtra}` : ej.tip
-      return { ...ej, series: seriesAjustadas, reps: repsAjustadas, tip: tipFinal }
+      return conCatalogo({ ...ej, series: seriesAjustadas, reps: repsAjustadas, tip: tipFinal })
     })
   }))
 }
@@ -818,35 +830,17 @@ export function matchMusculo(ejMusculo) {
 
 // Ejercicios sustitutos seguros por zona de edad/IMC
 // Criterio: misma cadena muscular, menor compresión espinal y estrés articular
+// id del catálogo → sustitutos en orden de preferencia (se usa el primero que
+// no esté ya en el día, para no duplicar ejercicios ni mezclar historiales)
 const EJ_SUSTITUTOS = {
-  // Sentadilla barra → Prensa 45° (elimina carga axial espinal)
-  sq: {
-    id: 'pr', nombre: 'Prensa 45°', musculo: 'Cuádriceps, glúteos',
-    tipo: 'peso', gif: G.pr,
-    tip: 'Alternativa segura a la sentadilla con barra: sin carga axial en la columna. Pies en ancho de hombros. No bloquees rodillas en la extensión.',
-    alternativas: [{ nombre: 'Sentadilla goblet con kettlebell', musculo: 'Cuádriceps/Glúteos' }],
-  },
-  // Press banca barra → Press mancuernas (rango libre, menor estrés glenohumeral)
-  pb: {
-    id: 'pman', nombre: 'Press mancuernas banco plano', musculo: 'Pecho (fibras medias)',
-    tipo: 'peso', gif: G.pman,
-    tip: 'Las mancuernas permiten un arco articular más natural que la barra, reduciendo el estrés en el hombro y la muñeca.',
-    alternativas: [{ nombre: 'Press en máquina de pecho', musculo: 'Pecho' }],
-  },
-  // Remo barra → Remo polea sentado (elimina carga lumbar estática)
-  rb: {
-    id: 'rs', nombre: 'Remo sentado en polea', musculo: 'Espalda media',
-    tipo: 'peso', gif: G.rs,
-    tip: 'Sin carga axial en la columna lumbar. Espalda erguida, pecho al frente, codos pegados al cuerpo. Tira al ombligo.',
-    alternativas: [{ nombre: 'Remo mancuerna unilateral apoyado', musculo: 'Espalda media' }],
-  },
-  // Press militar barra de pie → Press mancuernas sentado (elimina riesgo de equilibrio)
-  pm: {
-    id: 'pm', nombre: 'Press mancuernas sentado', musculo: 'Deltoides anterior',
-    tipo: 'peso', gif: G.pm,
-    tip: 'Realiza el press SENTADO en banco con respaldo. Reduce el riesgo de caída y la carga lumbar en comparación con el press de pie.',
-    alternativas: [{ nombre: 'Press en máquina de hombros', musculo: 'Deltoides anterior' }],
-  },
+  sq:       { ids: ['pr', 'hack', 'sg'],              tip: 'Alternativa segura a la sentadilla con barra: sin carga axial en la columna. No bloquees rodillas.' },
+  pb:       { ids: ['pman', 'press_maquina'],         tip: 'Las mancuernas permiten un arco articular más natural, reduciendo el estrés en hombro y muñeca.' },
+  pi_barra: { ids: ['pi', 'pi_maquina'],              tip: 'Mancuernas o máquina: menor estrés en el hombro que la barra.' },
+  rb:       { ids: ['rs', 'remo_maquina', 'remo_t'],  tip: 'Sin carga lumbar estática. Espalda erguida, codos pegados, tira al ombligo.' },
+  pendlay:  { ids: ['remo_t', 'rs', 'remo_maquina'],  tip: 'Remo con el pecho apoyado: misma espalda sin carga lumbar.' },
+  pm:       { ids: ['pm_maquina', 'pm_manc'],         tip: 'Press SENTADO con respaldo: menos carga lumbar y sin riesgo de desequilibrio.' },
+  pmk:      { ids: ['pmr_manc', 'hip_thrust'],        tip: 'Bisagra con mancuernas: misma cadena posterior con mucha menos compresión espinal.' },
+  buenos_dias: { ids: ['pmr_manc', 'hiper'],          tip: 'Menor carga sobre la zona lumbar.' },
 }
 
 function getZonaEdad(edad) {
@@ -954,17 +948,19 @@ export function adaptarDiasAlPerfil(dias, datosUsuario = {}) {
   return dias.map(dia => ({
     ...dia,
     cardio: adaptarCardio(dia.cardio, zonaEdad, zonaBmi),
-    _perfil: { zonaEdad, zonaBmi, esMujer },
+    _perfil: { zonaEdad, zonaBmi, esMujer, evitarBarra: debesSustituir },
     ejercicios: dia.ejercicios.map(ej => {
       // 1. Sustituir ejercicios de alta carga axial/articular cuando procede
       if (debesSustituir && EJ_SUSTITUTOS[ej.id]) {
-        const sust = EJ_SUSTITUTOS[ej.id]
-        // 70+: además incrementa el rango de reps hacia zona de mayor control (12-20)
-        const repsAdaptadas = esSeniorPlus ? modificarReps(sust.reps, 3) : sust.reps
+        const { ids, tip } = EJ_SUSTITUTOS[ej.id]
+        const usados = new Set(dia.ejercicios.map(e => e.id))
+        const subId = ids.find(id => !usados.has(id)) || ids[0]
+        const cat = CATALOGO[subId]
+        const repsAdaptadas = esSeniorPlus ? modificarReps(ej.reps, 3) : ej.reps
         return {
-          ...sust,
-          series: ej.series,
-          reps: repsAdaptadas,
+          ...ej,
+          id: cat.id, nombre: cat.nombre, gif: cat.gif, metrica: cat.metrica, grupo: cat.grupo,
+          tip, reps: repsAdaptadas,
           _sustituido: ej.nombre,
         }
       }

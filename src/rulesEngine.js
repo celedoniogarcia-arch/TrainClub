@@ -1,3 +1,5 @@
+import { historialOrdenado, mejorSerie, seriesSesion, puntuacion, formatSerie, rangoReps, fechaADate } from './training.js'
+
 // ─── MOTOR DE REGLAS DE ENTRENAMIENTO ────────────────────────────────────────
 
 // Normaliza etiquetas de músculo específicas a grupos principales para MEV/MRV
@@ -107,7 +109,7 @@ const PROGRESION = {
 const COMPUESTOS = ['Pecho', 'Espalda', 'Pierna', 'Hombros']
 
 // ── Función principal: genera todas las recomendaciones ───────────────────────
-export function generarRecomendaciones({ objetivo, nivel, semanasCiclo, registros, histPeso, actividades, DIAS, seriesExtra, perfilFisico, sexo }) {
+export function generarRecomendaciones({ objetivo, nivel, semanasCiclo, registros, histPeso, actividades, DIAS, seriesExtra, perfilFisico, sexo, hoy }) {
   const obj = objetivo || 'recomposicion'
   const niv = nivel || 'intermedio'
   const params = PARAMS[obj]?.[niv] || PARAMS.recomposicion.intermedio
@@ -120,7 +122,7 @@ export function generarRecomendaciones({ objetivo, nivel, semanasCiclo, registro
   if (DIAS) {
     for (const dia of DIAS) {
       for (const ej of (dia.ejercicios || [])) {
-        recomendaciones[ej.id] = calcularSugerenciaEjercicio(ej, registros, prog, params)
+        recomendaciones[ej.regId || ej.id] = calcularSugerenciaEjercicio(ej, registros, prog, params, { hoy })
       }
     }
   }
@@ -149,112 +151,77 @@ export function generarRecomendaciones({ objetivo, nivel, semanasCiclo, registro
   }
 }
 
-// ── Sugerencia de peso/carga para un ejercicio ────────────────────────────────
-function calcularSugerenciaEjercicio(ej, registros, prog, params) {
-  const ejReg = registros[ej.id]
-  const historialRaw = ejReg
-    ? Object.entries(ejReg).sort(([a], [b]) => fechaADate(a) - fechaADate(b))
-    : []
+// ── Sugerencia de carga para un ejercicio (doble progresión) ───────────────────
+// Usa TODAS las series de cada sesión (no solo la primera) y la clave del
+// ejercicio realmente realizado (ej.regId), de modo que alternativas y
+// rotaciones llevan su propio progreso.
+export function calcularSugerenciaEjercicio(ej, registros, prog, params, { hoy } = {}) {
+  const regId = ej.regId || ej.id
+  const metrica = ej.metrica || 'kg_reps'
+  const hist = historialOrdenado(registros[regId], { excluir: hoy })
 
-  // Construir historial reciente para mostrar en UI (últimas 4 sesiones)
-  const historialReciente = historialRaw.slice(-4).map(([fecha, series]) => {
-    if (ej.tipo === 'peso' || ej.tipo === 'kg') {
-      const kg = Number(series.s1) || null
-      return { fecha, display: kg ? `${kg}kg` : '-' , valor: kg }
-    }
-    if (ej.tipo === 'peso_reps') {
-      const [kg, reps] = (series.s1 || '').split('|')
-      return { fecha, display: kg && reps ? `${kg}kg×${reps}` : '-', valor: Number(kg) || null }
-    }
-    if (ej.tipo === 'reps') {
-      const r = Number(series.s1) || null
-      return { fecha, display: r ? `${r} reps` : '-', valor: r }
-    }
-    if (ej.tipo === 'tiempo') {
-      const s = Number(series.s1) || null
-      return { fecha, display: s ? `${s}s` : '-', valor: s }
-    }
-    return { fecha, display: '-', valor: null }
+  const historialReciente = hist.slice(-4).map(([fecha, ses]) => {
+    const top = mejorSerie(ses, metrica)
+    return { fecha, display: formatSerie(top, metrica), valor: top ? puntuacion(top, metrica) : null }
   })
+  const sinDatos = { kgObjetivo: null, repsObjetivo: null, estado: 'sin_datos', mensaje: null, historialReciente }
+  if (!hist.length) return sinDatos
 
-  const sinDatos = { pesoSugerido: null, estado: 'sin_datos', mensaje: null, historialReciente }
+  const [repsMin, repsMax] = rangoReps(ej.reps)
+  const ultima = seriesSesion(hist.at(-1)[1], metrica)
+  if (!ultima.length) return sinDatos
+  const top = mejorSerie(hist.at(-1)[1], metrica)
+  const estancado = hist.length >= 3 && detectarEstancamiento(hist, metrica)
 
-  if (historialRaw.length < 1) return sinDatos
-
-  const esCompuesto = COMPUESTOS.includes(ej.musculo)
-  const incremento = esCompuesto ? prog.compuestos : prog.aislamientos
-  const ultimaSesion = historialRaw.at(-1)?.[1]
-
-  // ── Ejercicios con peso libre (peso y kg son equivalentes) ──────────────────
-  if (ej.tipo === 'peso' || ej.tipo === 'kg') {
-    const ultimoPeso = Number(ultimaSesion?.s1) || 0
-    if (!ultimoPeso) return { ...sinDatos, mensaje: null }
-
-    // Con una sola sesión no hay referencia suficiente para saber si el peso es adecuado
-    if (historialRaw.length < 2) {
-      return { pesoSugerido: ultimoPeso, estado: 'mantener', mensaje: `Peso registrado: ${ultimoPeso}kg. Registra otra sesión para saber cuándo subir.`, historialReciente }
-    }
-    const estancado = historialRaw.length >= 3 && detectarEstancamiento(historialRaw, 'kg')
-    if (estancado) {
-      return { pesoSugerido: ultimoPeso, estado: 'estancado', mensaje: `Sin progreso reciente. Intenta ${ultimoPeso}kg con mejor técnica.`, historialReciente }
-    }
-    const nuevoPeso = +(ultimoPeso + incremento).toFixed(2)
-    return { pesoSugerido: nuevoPeso, estado: 'subir_peso', mensaje: `Sube a ${nuevoPeso}kg esta sesión`, historialReciente }
+  // ── Isométricos ──
+  if (metrica === 'seg') {
+    const obj = (top.seg || 0) + 5
+    return { kgObjetivo: top.kg || null, segObjetivo: obj, estado: 'mantener', mensaje: `Aguanta ${obj}s por serie (mejor: ${top.seg}s)`, historialReciente }
   }
 
-  // ── Peso + reps (doble progresión) ──────────────────────────────────────────
-  if (ej.tipo === 'peso_reps') {
-    const ultimoPeso = Number(ultimaSesion?.s1?.split('|')[0]) || 0
-    const ultimasReps = Number(ultimaSesion?.s1?.split('|')[1]) || 0
-    if (!ultimoPeso) return { ...sinDatos, mensaje: null }
-
-    const [repsMin, repsMax] = String(params.reps).includes('-')
-      ? params.reps.split('-').map(Number)
-      : [Number(params.reps) - 2, Number(params.reps)]
-
-    const estancado = historialRaw.length >= 3 && detectarEstancamiento(historialRaw, ej.tipo)
-    if (estancado) {
-      return { pesoSugerido: ultimoPeso, estado: 'estancado', mensaje: `Sin progreso reciente. Intenta mejorar la técnica o cambia el ejercicio.`, historialReciente }
+  // ── Peso corporal (+ lastre opcional) ──
+  if (metrica === 'reps') {
+    const todasMax = ultima.every(s => (s.reps || 0) >= repsMax)
+    if (todasMax && repsMax > 0) {
+      const lastre = +((top.kg || 0) + Math.max(prog.aislamientos * 2, 2.5)).toFixed(2)
+      return { kgObjetivo: lastre, repsObjetivo: repsMin, estado: 'subir_peso', mensaje: `¡${repsMax} reps en todas las series! Añade lastre: +${lastre}kg × ${repsMin}`, historialReciente }
     }
-    if (ultimasReps >= repsMax) {
-      const nuevoPeso = +(ultimoPeso + incremento).toFixed(2)
-      return { pesoSugerido: nuevoPeso, estado: 'subir_peso', repsObjetivo: repsMin, mensaje: `¡${repsMax} reps! → Sube a ${nuevoPeso}kg y apunta a ${repsMin} reps`, historialReciente }
-    }
-    return { pesoSugerido: ultimoPeso, estado: 'mantener', repsObjetivo: ultimasReps + 1, mensaje: `Mismo peso (${ultimoPeso}kg), intenta ${ultimasReps + 1} reps`, historialReciente }
+    const objetivo = Math.min((top.reps || 0) + 1, Math.max(repsMax, (top.reps || 0) + 1))
+    return { kgObjetivo: top.kg || null, repsObjetivo: objetivo, estado: estancado ? 'estancado' : 'mantener', mensaje: `Intenta ${objetivo} reps${top.kg ? ` con +${top.kg}kg` : ''} (mejor: ${top.reps})`, historialReciente }
   }
 
-  // ── Solo reps ────────────────────────────────────────────────────────────────
-  if (ej.tipo === 'reps') {
-    const ultimasReps = Number(ultimaSesion?.s1) || 0
-    if (!ultimasReps) return sinDatos
-    return { pesoSugerido: null, estado: 'mantener', repsObjetivo: ultimasReps + prog.repsParaSubir, mensaje: `Intenta ${ultimasReps + prog.repsParaSubir} reps (último: ${ultimasReps})`, historialReciente }
-  }
+  // ── Peso + reps ──
+  const esCompuesto = COMPUESTOS.includes(normalizarMusculo(ej.musculo))
+  const incremento = esCompuesto ? Math.max(prog.compuestos, 2.5) : Math.max(prog.aislamientos * 2, 1) // salto mínimo realista de discos/mancuernas
+  const kgTrabajo = Math.max(...ultima.map(s => s.kg || 0))
+  if (!kgTrabajo) return sinDatos
+  const seriesTrabajo = ultima.filter(s => (s.kg || 0) === kgTrabajo)
+  const sinReps = seriesTrabajo.every(s => s.reps == null)
 
-  // ── Tiempo ───────────────────────────────────────────────────────────────────
-  if (ej.tipo === 'tiempo') {
-    const ultimoTiempo = Number(ultimaSesion?.s1) || 0
-    if (!ultimoTiempo) return sinDatos
-    const objetivo = ultimoTiempo + 5
-    return { pesoSugerido: null, estado: 'mantener', mensaje: `Intenta aguantar ${objetivo}s (último: ${ultimoTiempo}s)`, historialReciente }
+  if (sinReps) {
+    return { kgObjetivo: kgTrabajo, repsObjetivo: repsMin, estado: 'mantener', mensaje: `Usa ${kgTrabajo}kg y apunta las reps de cada serie para saber cuándo subir`, historialReciente }
   }
-
-  return sinDatos
+  if (estancado) {
+    return { kgObjetivo: kgTrabajo, repsObjetivo: repsMin, estado: 'estancado', mensaje: `Sin progreso en 3 sesiones. Prueba una alternativa o baja a ${+(kgTrabajo * 0.9).toFixed(1)}kg y vuelve a subir`, historialReciente }
+  }
+  const completas = seriesTrabajo.length >= Math.min(ej.series || 1, ultima.length) && seriesTrabajo.every(s => (s.reps || 0) >= repsMax)
+  if (completas) {
+    const nuevo = +(kgTrabajo + incremento).toFixed(2)
+    return { kgObjetivo: nuevo, repsObjetivo: repsMin, estado: 'subir_peso', mensaje: `¡${repsMax} reps en todas las series! Sube a ${nuevo}kg × ${repsMin}`, historialReciente }
+  }
+  const minReps = Math.min(...seriesTrabajo.map(s => s.reps || 0))
+  const objetivo = Math.min(Math.max(minReps + 1, repsMin), repsMax)
+  return { kgObjetivo: kgTrabajo, repsObjetivo: objetivo, estado: 'mantener', mensaje: `Mismo peso (${kgTrabajo}kg), busca ${objetivo} reps en cada serie`, historialReciente }
 }
 
-// ── Detectar estancamiento (2+ sesiones sin mejora) ──────────────────────────
-function detectarEstancamiento(historial, tipo) {
+// ── Estancamiento: el mejor set (1RM estimado) no mejora en 3 sesiones ─────────
+export function detectarEstancamiento(historial, metrica = 'kg_reps') {
   if (historial.length < 3) return false
-  const ultimas = historial.slice(-3)
-
-  if (tipo === 'peso_reps') {
-    const pesos = ultimas.map(([, s]) => Number(s.s1?.split('|')[0]) || 0)
-    return pesos[2] <= pesos[0] && pesos[2] <= pesos[1]
-  }
-  if (tipo === 'kg') {
-    const pesos = ultimas.map(([, s]) => Number(s.s1) || 0)
-    return pesos[2] <= pesos[0] && pesos[2] <= pesos[1]
-  }
-  return false
+  const vals = historial.slice(-3).map(([, ses]) => {
+    const top = mejorSerie(ses, metrica)
+    return top ? puntuacion(top, metrica) : 0
+  })
+  return vals[2] > 0 && vals[2] <= vals[0] && vals[2] <= vals[1]
 }
 
 // ── Volumen por grupo muscular ────────────────────────────────────────────────
@@ -281,9 +248,10 @@ function calcularVolumenMuscular(DIAS, registros, seriesExtra = {}) {
   const registrado = {}
   for (const dia of DIAS) {
     for (const ej of (dia.ejercicios || [])) {
-      if (!registros[ej.id]) continue
+      const rid = ej.regId || ej.id
+      if (!registros[rid]) continue
       const grupo = normalizarMusculo(ej.musculo)
-      const series = Object.entries(registros[ej.id])
+      const series = Object.entries(registros[rid])
         .filter(([fecha]) => fechaADate(fecha) >= hace14dias)
         .reduce((sum, [, s]) => sum + Object.keys(s).length, 0)
       registrado[grupo] = (registrado[grupo] || 0) + series
@@ -383,14 +351,15 @@ function generarAlertas({ semanasCiclo, params, registros, DIAS, actividades, ob
   if (DIAS && registros) {
     for (const dia of DIAS) {
       for (const ej of (dia.ejercicios || [])) {
-        if (ej.tipo !== 'peso_reps' && ej.tipo !== 'kg') continue
-        const hist = Object.entries(registros[ej.id] || {}).sort(([a], [b]) => fechaADate(a) - fechaADate(b))
-        if (hist.length >= 3 && detectarEstancamiento(hist, ej.tipo)) {
+        if (ej.metrica === 'seg') continue
+        const rid = ej.regId || ej.id
+        const hist = historialOrdenado(registros[rid])
+        if (hist.length >= 3 && detectarEstancamiento(hist, ej.metrica)) {
           alertas.push({
             tipo: 'plateau', prioridad: 'media',
-            ejId: ej.id, ejNombre: ej.nombre, ejMusculo: ej.musculo,
+            ejId: rid, slot: ej.slot, ejNombre: ej.nombre, ejMusculo: ej.musculo,
             titulo: `↔️ Estancamiento: ${ej.nombre}`,
-            desc: `Mismo peso las últimas 3 sesiones. Cambia el ángulo de ataque: prueba el ejercicio alternativo o varía el rango de reps.`,
+            desc: `Tu mejor serie no ha mejorado en 3 sesiones. Cambia el ángulo de ataque: prueba el ejercicio alternativo o varía el rango de reps.`,
           })
         }
       }
@@ -430,9 +399,9 @@ function generarProgresos({ recomendaciones, nivel, registros, DIAS }) {
   const listos = []
   for (const dia of DIAS) {
     for (const ej of (dia.ejercicios || [])) {
-      const rec = recomendaciones[ej.id]
+      const rec = recomendaciones[ej.regId || ej.id]
       if (rec?.estado === 'subir_peso') {
-        listos.push({ ejId: ej.id, ejNombre: ej.nombre, pesoSugerido: rec.pesoSugerido, mensaje: rec.mensaje })
+        listos.push({ ejId: ej.regId || ej.id, ejNombre: ej.nombre, pesoSugerido: rec.kgObjetivo, mensaje: rec.mensaje })
       }
     }
   }
@@ -503,17 +472,6 @@ export function calcularNutricionObjetivo({ objetivo, tdee, peso }) {
     return { kcal, proteinaG, razon: 'Superávit leve para soportar el entrenamiento de fuerza máxima', ritmo: '~0.15 kg/semana' }
   }
   return null
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function fechaADate(fechaStr) {
-  // Soporta "DD/MM/YYYY" y "YYYY-MM-DD"
-  if (!fechaStr) return 0
-  if (fechaStr.includes('/')) {
-    const [d, m, y] = fechaStr.split('/')
-    return new Date(y, m - 1, d).getTime()
-  }
-  return new Date(fechaStr).getTime()
 }
 
 export { VOL, PARAMS, PROGRESION }

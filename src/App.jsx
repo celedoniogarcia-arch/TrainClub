@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { CICLOS, PLATOS, PLATOS_PREPARADOS, AVATARS, getDiasCiclo, matchMusculo, getPlatosByObjetivo, adaptarDiasAlPerfil, calcularPerfilFisico } from './data.js'
-import fitcronEjercicios from './fitcron_exercises_local.json'
+import { CICLOS, PLATOS, PLATOS_PREPARADOS, AVATARS, getDiasCiclo, getPlatosByObjetivo, adaptarDiasAlPerfil, calcularPerfilFisico } from './data.js'
+import { CATALOGO, alternativasDe, construirDiasVisibles, semanasHastaRotacion, bloqueDeFecha } from './catalogo.js'
+import { fechaKey, parseSerie, serieTieneDatos, seriesSesion, mejorSerie, historialOrdenado, calcularPRs, prsDeSerie, formatSerie, volumenSesion, rangoReps, descansoRecomendado } from './training.js'
 import { getProfiles, upsertProfile, deleteProfile, getUserData, saveUserData, getDieta, saveDieta } from './db.js'
-import { OBJETIVOS, NIVELES, generarRecomendaciones, calcularNutricionObjetivo, normalizarMusculo } from './rulesEngine.js'
+import { OBJETIVOS, NIVELES, generarRecomendaciones, calcularNutricionObjetivo, normalizarMusculo, detectarEstancamiento } from './rulesEngine.js'
 import { supabase, getSession, onAuthStateChange, signOut } from './supabase.js'
 import { getQuoteOfDay } from './quotes.js'
 import { pushSupported, subscribePush, unsubscribePush, getSubscription } from './pushService.js'
@@ -47,6 +48,10 @@ function addDays(date, n) {
 function startOfDay(date) {
   const d = new Date(date); d.setHours(0,0,0,0); return d
 }
+function fechaADateLocal(f) {
+  const [d, m, y] = String(f).split('/').map(Number)
+  return new Date(y, m - 1, d).getTime()
+}
 
 const S = {
   page: { maxWidth: 430, margin: '0 auto', minHeight: '100dvh', background: '#f5f5f7', paddingBottom: 84 },
@@ -59,63 +64,83 @@ const S = {
   nav: { position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 430, background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(20px)', borderTop: '1px solid #e5e5ea', display: 'flex', paddingBottom: 'env(safe-area-inset-bottom,0px)' },
 }
 
-// ─── INPUT DE EJERCICIO ──────────────────────────────────────────────────────
+// ─── TABLA DE SERIES (estilo Strong / Hevy) ──────────────────────────────────
+// Cada serie registra kg + reps (o segundos en isométricos). Columna "Anterior"
+// con la misma serie de la última sesión, ✓ para completar (lanza el descanso)
+// y aviso 🏆 en CUALQUIER serie que bata una marca, no solo en la primera.
 
-function EjercicioInput({ ej, serie, valor, onChange, ultimoValor }) {
-  const { tipo, reps } = ej
-  const esDeload = String(reps).includes('deload')
-  const inputStyle = { ...S.input, textAlign: 'center', padding: '10px 8px', fontSize: 17, fontWeight: 700 }
+function TablaSeries({ ej, sesion, sesionPrevia, prPrevio, sug, editable, color, onChange, onCheck }) {
+  const metrica = ej.metrica || 'kg_reps'
+  const registradas = Object.keys(sesion || {}).filter(k => /^s\d+$/.test(k)).map(k => Number(k.slice(1)))
+  const [extra, setExtra] = useState(0)
+  const total = Math.max(ej.series || 1, ...registradas, 0) + extra
+  const prev = n => parseSerie(sesionPrevia?.[`s${n}`], metrica)
+  const cell = { ...S.input, textAlign: 'center', padding: '9px 4px', fontSize: 16, fontWeight: 700, minWidth: 0 }
+  const [rMin, rMax] = rangoReps(ej.reps)
+  const repsObj = sug?.repsObjetivo || rMax
 
-  if (tipo === 'tiempo') return (
-    <div>
-      <div style={{ fontSize: 11, color: '#8e8e93', marginBottom: 4, textAlign: 'center' }}>Serie {serie}</div>
-      <div style={{ position: 'relative' }}>
-        <input type="number" inputMode="numeric" placeholder={reps} value={valor} onChange={e => onChange(e.target.value)} style={inputStyle} />
-        <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 10, color: '#8e8e93' }}>seg</span>
-      </div>
-      {ultimoValor && <div style={{ fontSize: 10, color: '#8e8e93', textAlign: 'center', marginTop: 2 }}>último: {ultimoValor}s</div>}
-    </div>
-  )
-
-  if (tipo === 'reps') return (
-    <div>
-      <div style={{ fontSize: 11, color: '#8e8e93', marginBottom: 4, textAlign: 'center' }}>Serie {serie}</div>
-      <div style={{ position: 'relative' }}>
-        <input type="number" inputMode="numeric" placeholder={reps} value={valor} onChange={e => onChange(e.target.value)} style={inputStyle} />
-        <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 10, color: '#8e8e93' }}>reps</span>
-      </div>
-      {ultimoValor && <div style={{ fontSize: 10, color: '#8e8e93', textAlign: 'center', marginTop: 2 }}>último: {ultimoValor} reps</div>}
-    </div>
-  )
-
-  if (tipo === 'peso_reps') {
-    const [kg, repsVal] = (valor || '').split('|')
-    return (
-      <div>
-        <div style={{ fontSize: 11, color: '#8e8e93', marginBottom: 4, textAlign: 'center' }}>Serie {serie}</div>
-        <div style={{ display: 'flex', gap: 4 }}>
-          <div style={{ position: 'relative', flex: 1 }}>
-            <input type="number" inputMode="decimal" placeholder="0" value={kg || ''} onChange={e => onChange(`${e.target.value}|${repsVal || ''}`)} style={{ ...inputStyle, fontSize: 14 }} />
-            <span style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', fontSize: 9, color: '#8e8e93' }}>kg</span>
-          </div>
-          <div style={{ position: 'relative', flex: 1 }}>
-            <input type="number" inputMode="numeric" placeholder={reps} value={repsVal || ''} onChange={e => onChange(`${kg || ''}|${e.target.value}`)} style={{ ...inputStyle, fontSize: 14 }} />
-            <span style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', fontSize: 9, color: '#8e8e93' }}>reps</span>
-          </div>
-        </div>
-        {ultimoValor && <div style={{ fontSize: 10, color: '#8e8e93', textAlign: 'center', marginTop: 2 }}>último: {ultimoValor.replace('|', 'kg × ')} reps</div>}
-      </div>
-    )
+  const sugerido = n => {
+    const p = prev(n)
+    return {
+      kg: sug?.kgObjetivo ?? p.kg ?? null,
+      reps: metrica === 'seg' ? null : (repsObj ?? p.reps ?? null),
+      seg: metrica === 'seg' ? (sug?.segObjetivo ?? p.seg ?? rMax) : null,
+    }
   }
+  const cols = metrica === 'seg' ? '34px 1fr 1fr 40px' : '34px 1fr 1fr 1fr 40px'
 
   return (
-    <div>
-      <div style={{ fontSize: 11, color: '#8e8e93', marginBottom: 4, textAlign: 'center' }}>Serie {serie}</div>
-      <div style={{ position: 'relative' }}>
-        <input type="number" inputMode="decimal" placeholder={esDeload && ultimoValor ? `~${Math.round(Number(ultimoValor) * 0.5)}` : 'kg'} value={valor} onChange={e => onChange(e.target.value)} style={inputStyle} />
-        <span style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', fontSize: 10, color: '#8e8e93' }}>kg</span>
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: cols, gap: 6, fontSize: 10, fontWeight: 700, color: '#8e8e93', textTransform: 'uppercase', letterSpacing: 0.3, padding: '0 2px 6px' }}>
+        <span style={{ textAlign: 'center' }}>Serie</span>
+        <span style={{ textAlign: 'center' }}>Anterior</span>
+        {metrica === 'seg'
+          ? <span style={{ textAlign: 'center' }}>Segundos</span>
+          : <><span style={{ textAlign: 'center' }}>{metrica === 'reps' ? '+kg lastre' : 'kg'}</span><span style={{ textAlign: 'center' }}>Reps</span></>}
+        <span style={{ textAlign: 'center' }}>✓</span>
       </div>
-      {ultimoValor && <div style={{ fontSize: 10, color: '#8e8e93', textAlign: 'center', marginTop: 2 }}>último: {ultimoValor}kg</div>}
+      {Array.from({ length: total }, (_, i) => i + 1).map(n => {
+        const s = parseSerie(sesion?.[`s${n}`], metrica)
+        const p = prev(n)
+        const ph = sugerido(n)
+        const prs = prsDeSerie(s, prPrevio, metrica)
+        const done = s.ok
+        const bg = done ? '#f0fdf4' : 'transparent'
+        const input = (campo, mode = 'decimal') => (
+          <input type="number" inputMode={mode} disabled={!editable}
+            placeholder={ph[campo] != null ? String(ph[campo]) : '—'}
+            value={s[campo] ?? ''}
+            onChange={e => onChange(n, { [campo]: e.target.value === '' ? null : Number(e.target.value) })}
+            style={{ ...cell, background: done ? '#dcfce7' : '#f5f5f7' }} />
+        )
+        return (
+          <div key={n}>
+            <div style={{ display: 'grid', gridTemplateColumns: cols, gap: 6, alignItems: 'center', padding: '3px 2px', borderRadius: 10, background: bg }}>
+              <span style={{ textAlign: 'center', fontWeight: 800, color: n > (ej.series || 0) ? '#8e8e93' : '#1c1c1e', fontSize: 14 }}>{n}</span>
+              <span style={{ textAlign: 'center', fontSize: 12, color: '#8e8e93', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{serieTieneDatos(p) ? formatSerie(p, metrica) : '—'}</span>
+              {metrica === 'seg' ? input('seg', 'numeric') : <>{input('kg')}{input('reps', 'numeric')}</>}
+              <button disabled={!editable} onClick={() => onCheck(n, !done, ph)}
+                aria-label={done ? 'Desmarcar serie' : 'Completar serie'}
+                style={{ width: 36, height: 36, borderRadius: 10, border: 'none', cursor: editable ? 'pointer' : 'default', background: done ? '#10b981' : '#e5e5ea', color: done ? '#fff' : '#8e8e93', fontSize: 16, fontWeight: 800, justifySelf: 'center' }}>✓</button>
+            </div>
+            {prs.length > 0 && (
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#b45309', padding: '2px 0 4px 40px' }}>
+                🏆 {prs.length > 1 ? '¡Nuevas marcas!' : '¡Nueva marca!'} {prs.map(t => t === 'peso' ? 'peso máximo' : t === '1RM' ? '1RM estimado' : t === 'reps' ? 'repeticiones' : 'tiempo').join(' · ')}
+              </div>
+            )}
+          </div>
+        )
+      })}
+      {editable && (
+        <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+          <button onClick={() => setExtra(x => x + 1)}
+            style={{ flex: 1, padding: '8px', borderRadius: 10, border: '1px dashed #c7c7cc', background: 'transparent', color: color, fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>+ Añadir serie</button>
+          {extra > 0 && (
+            <button onClick={() => setExtra(x => Math.max(0, x - 1))}
+              style={{ padding: '8px 12px', borderRadius: 10, border: '1px solid #e5e5ea', background: 'transparent', color: '#8e8e93', fontSize: 13, cursor: 'pointer' }}>− Quitar</button>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -473,49 +498,31 @@ export default function App() {
       }
     }
 
-    // Rotar ejercicios estancados
-    const nuevasAlts = { ...(ud.alternativasActivas || {}) }
+    // Rotar ejercicios estancados (mejor serie sin mejorar en 3 sesiones)
+    // Se cambia por otro de la MISMA familia; el nuevo empieza su propio historial.
+    const nuevasAlts = Object.fromEntries(Object.entries(ud.alternativasActivas || {}).filter(([, v]) => typeof v === 'string'))
     const registros_ = ud.registros || {}
-    for (const dia of dias_) {
+    const visibles_ = construirDiasVisibles(adaptarDiasAlPerfil(dias_, dietaData || {}), { alternativas: nuevasAlts, fecha: new Date(), objetivo: obj, bloqueInicio: ud.bloqueInicio })
+    for (const dia of visibles_) {
       for (const ej of (dia.ejercicios || [])) {
-        if (ej.tipo !== 'peso' && ej.tipo !== 'peso_reps' && ej.tipo !== 'kg') continue
-        const hist = Object.entries(registros_[ej.id] || {}).sort(([a], [b]) => {
-          const [da, ma, ya] = a.split('/').map(Number)
-          const [db, mb, yb] = b.split('/').map(Number)
-          return new Date(ya, ma - 1, da) - new Date(yb, mb - 1, db)
-        })
-        if (hist.length >= 3) {
-          // Detectar estancamiento: últimas 3 sesiones sin mejora
-          const vals = hist.slice(-3).map(([, s]) => {
-            const v = s.s1 || ''
-            return ej.tipo === 'peso_reps' ? Number(v.split('|')[0]) : Number(v)
-          })
-          if (vals[2] <= vals[0] && vals[2] <= vals[1] && !nuevasAlts[ej.id]) {
-            const grupo = matchMusculo(ej.musculo)
-            const candidatos = fitcronEjercicios.filter(e => e.musculo === grupo && e.gif)
-            if (candidatos.length > 0) {
-              const ejFitcron = fitcronEjercicios.find(e => e.slug === ej.id)
-              const zona = ejFitcron?.zona || null
-              const pool = zona
-                ? (candidatos.filter(e => e.zona === zona).length > 0 ? candidatos.filter(e => e.zona === zona) : candidatos)
-                : candidatos
-              nuevasAlts[ej.id] = pool[Math.floor(Math.random() * pool.length)]
-              cambios.push(`🔄 ${ej.nombre}: cambiado por estancamiento`)
-            }
-          }
+        if (ej.metrica === 'seg' || nuevasAlts[ej.slot]) continue
+        const hist = historialOrdenado(registros_[ej.regId])
+        if (!detectarEstancamiento(hist, ej.metrica)) continue
+        const ocupados = dia.ejercicios.map(e => e.regId)
+        const alt = alternativasDe(ej.regId, { evitarBarra: !!dia._perfil?.evitarBarra, excluir: ocupados })[0]
+        if (alt) {
+          nuevasAlts[ej.slot] = alt.id
+          cambios.push(`🔄 ${ej.nombre} → ${alt.nombre} (estancamiento)`)
         }
       }
     }
 
-    const nuevoUd = {
-      ...ud,
+    setUd(prev => ({
+      ...prev,
       seriesExtra: nuevoExtra,
-      alternativasActivas: nuevasAlts,
+      alternativasActivas: { ...nuevasAlts },
       ultimaRevisionSemana: semanaActual,
-    }
-    setUdState(nuevoUd)
-    clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => saveUserData(userId, nuevoUd), 1000)
+    }))
 
     if (cambios.length > 0) {
       setRevisionBanner({ semana: semanaActual, cambios })
@@ -523,10 +530,15 @@ export default function App() {
   }, [userId, ud.ultimaRevisionSemana]) // solo corre cuando cambia la semana o el usuario
 
   // Guardar datos de usuario con debounce (1s)
-  const setUd = useCallback((newUd) => {
-    setUdState(newUd)
-    clearTimeout(saveTimer.current)
-    saveTimer.current = setTimeout(() => saveUserData(userId, newUd), 1000)
+  // Acepta objeto o función (prev => next) para que actualizaciones simultáneas
+  // (migración + revisión semanal al cargar) no se pisen entre sí.
+  const setUd = useCallback((upd) => {
+    setUdState(prev => {
+      const next = typeof upd === 'function' ? upd(prev) : upd
+      clearTimeout(saveTimer.current)
+      saveTimer.current = setTimeout(() => saveUserData(userId, next), 1000)
+      return next
+    })
   }, [userId])
 
   const setDietaUser = useCallback((newDieta) => {
@@ -542,8 +554,42 @@ export default function App() {
     const dias = getDiasCiclo(cicloActual, user?.objetivo || 'recomposicion', user?.nivel || 'intermedio')
     return adaptarDiasAlPerfil(dias, dietaData || {})
   }, [cicloActual, user?.objetivo, user?.nivel, dietaData?.edad, dietaData?.pesoActual, dietaData?.altura, dietaData?.sexo])
-  const esFinde = selectedDate.getDay() === 0 || selectedDate.getDay() === 6
-  const dia = DIAS.find(d => d.id === DOW_TO_ID[selectedDate.getDay()]) || DIAS[0]
+  const alternativasActivas = useMemo(() =>
+    Object.fromEntries(Object.entries(ud.alternativasActivas || {}).filter(([, v]) => typeof v === 'string')),
+  [ud.alternativasActivas])
+  // Días con rotación por bloques + alternativas elegidas, según la fecha seleccionada
+  const DIAS_VIS = useMemo(() => construirDiasVisibles(DIAS, { alternativas: alternativasActivas, fecha: selectedDate, objetivo: user?.objetivo, bloqueInicio: ud.bloqueInicio }),
+    [DIAS, alternativasActivas, selectedDate, user?.objetivo, ud.bloqueInicio])
+  const diaSel = DIAS_VIS.find(d => d.id === DOW_TO_ID[selectedDate.getDay()]) || null
+  // Antes: un día sin entreno en la plantilla mostraba la rutina del lunes
+  const esFinde = !diaSel
+  const dia = diaSel || DIAS_VIS[0]
+  const fechaSel = fechaKey(selectedDate)
+  const esFuturo = startOfDay(selectedDate) > startOfDay(new Date())
+
+  // ── Migración única: historial con ids antiguos → ids del catálogo ────────
+  // Antes 'jp' servía para "Jalón" y "Dominadas con lastre", 'cb' para 3 curls…
+  // Se copia el historial al nuevo id solo si el id antiguo ya no se usa en el plan.
+  useEffect(() => {
+    if (!userId || udLoading || !ud || ud.migracionCatalogo >= 1 || !Object.keys(ud).length) return
+    const regs = { ...(ud.registros || {}) }
+    const idsPlan = new Set(DIAS.flatMap(d => d.ejercicios.map(e => e.id)))
+    let movidos = 0
+    DIAS.forEach(d => d.ejercicios.forEach(ej => {
+      const old = ej.legacyId
+      if (old && old !== ej.id && regs[old] && !regs[ej.id] && !idsPlan.has(old)) { regs[ej.id] = regs[old]; movidos++ }
+    }))
+    const altsLimpias = Object.fromEntries(Object.entries(ud.alternativasActivas || {}).filter(([, v]) => typeof v === 'string'))
+    setUd(prev => ({
+      ...prev,
+      registros: { ...regs, ...(prev.registros || {}) },
+      alternativasActivas: { ...altsLimpias, ...Object.fromEntries(Object.entries(prev.alternativasActivas || {}).filter(([, v]) => typeof v === 'string')) },
+      migracionCatalogo: 1,
+      // La rotación empieza a contar desde hoy: nada cambia de golpe al actualizar
+      bloqueInicio: prev.bloqueInicio ?? bloqueDeFecha(new Date()),
+    }))
+    if (movidos) console.info(`[TrainClub] historial migrado en ${movidos} ejercicio(s)`)
+  }, [userId, udLoading, ud.migracionCatalogo, DIAS])
 
   function updateUser(fields) {
     const updated = users.map(u => u.id === userId ? { ...u, ...fields } : u)
@@ -553,50 +599,57 @@ export default function App() {
 
   // ── Registros ──
   const registros = ud.registros || {}
-  function setValorEj(ejId, serie, valor) {
-    const hoy = new Date().toLocaleDateString('es-ES')
-    const r = structuredClone(registros)
-    if (!r[ejId]) r[ejId] = {}
-    if (!r[ejId][hoy]) r[ejId][hoy] = {}
-    r[ejId][hoy][`s${serie}`] = valor
+  // Las series se guardan en la FECHA SELECCIONADA (antes siempre en "hoy",
+  // aunque estuvieras viendo otro día) y bajo el id del ejercicio realizado.
+  function getSesion(regId, f = fechaSel) {
+    return registros[regId]?.[f] || {}
+  }
+  function getSesionPrevia(regId) {
+    const hist = historialOrdenado(registros[regId]).filter(([f]) => fechaADateLocal(f) < startOfDay(selectedDate).getTime())
+    return hist.at(-1)?.[1] || null
+  }
+  function guardarSerie(ej, n, patch) {
+    const metrica = ej.metrica
+    const r = { ...registros, [ej.regId]: { ...(registros[ej.regId] || {}) } }
+    const ses = { ...(r[ej.regId][fechaSel] || {}) }
+    const cur = parseSerie(ses[`s${n}`], metrica)
+    const next = { ...cur, ...patch }
+    if (!serieTieneDatos(next) && !next.ok) delete ses[`s${n}`]
+    else ses[`s${n}`] = { kg: next.kg, reps: next.reps, seg: next.seg, ok: !!next.ok }
+    if (Object.keys(ses).length) r[ej.regId][fechaSel] = ses
+    else delete r[ej.regId][fechaSel]
     setUd({ ...ud, registros: r })
   }
-  function getValorHoy(ejId, serie) {
-    const hoy = new Date().toLocaleDateString('es-ES')
-    return registros[ejId]?.[hoy]?.[`s${serie}`] || ''
+  function marcarSerie(ej, n, ok, sugeridos, esPrincipal) {
+    const cur = parseSerie(getSesion(ej.regId)[`s${n}`], ej.metrica)
+    const patch = { ok }
+    // Al completar una serie vacía se rellena con lo sugerido (como Strong/Hevy)
+    if (ok) for (const k of ['kg', 'reps', 'seg']) if (cur[k] == null && sugeridos[k] != null) patch[k] = sugeridos[k]
+    guardarSerie(ej, n, patch)
+    if (ok) iniciarDescanso(ej.nombre, descansoRecomendado(cicloActual, esPrincipal))
   }
-  function getUltimoValor(ejId) {
-    const hoy = new Date().toLocaleDateString('es-ES')
-    const fechas = Object.keys(registros[ejId] || {}).filter(f => f !== hoy).sort().reverse()
-    if (!fechas.length) return null
-    // Devuelve el mejor valor de todas las series del último día (no solo s1)
-    const series = Object.values(registros[ejId][fechas[0]] || {})
-    return series.find(v => v) || null
-  }
-  function getMaxValor(ejId, tipo) {
-    let max = 0
-    Object.values(registros[ejId] || {}).forEach(d => Object.values(d).forEach(v => {
-      const n = tipo === 'peso_reps' ? Number((v || '').split('|')[0]) : Number(v)
-      if (n > max) max = n
-    }))
-    return max || null
-  }
-
-  function aplicarSugerencia(ej, sug, series) {
-    const hoy = new Date().toLocaleDateString('es-ES')
-    const r = structuredClone(registros)
-    if (!r[ej.id]) r[ej.id] = {}
-    if (!r[ej.id][hoy]) r[ej.id][hoy] = {}
-    for (let s = 1; s <= series; s++) {
-      if (ej.tipo === 'peso' || ej.tipo === 'kg') {
-        r[ej.id][hoy][`s${s}`] = String(sug.pesoSugerido)
-      } else if (ej.tipo === 'peso_reps') {
-        r[ej.id][hoy][`s${s}`] = `${sug.pesoSugerido}|${sug.repsObjetivo || ''}`
-      } else if (ej.tipo === 'reps') {
-        r[ej.id][hoy][`s${s}`] = String(sug.repsObjetivo || '')
+  function aplicarSugerencia(ej, sug) {
+    const r = { ...registros, [ej.regId]: { ...(registros[ej.regId] || {}) } }
+    const ses = { ...(r[ej.regId][fechaSel] || {}) }
+    for (let n = 1; n <= ej.series; n++) {
+      const cur = parseSerie(ses[`s${n}`], ej.metrica)
+      if (cur.ok) continue
+      ses[`s${n}`] = {
+        kg: sug.kgObjetivo ?? cur.kg,
+        reps: ej.metrica === 'seg' ? null : (sug.repsObjetivo ?? cur.reps),
+        seg: ej.metrica === 'seg' ? (sug.segObjetivo ?? cur.seg) : null,
+        ok: false,
       }
     }
+    r[ej.regId][fechaSel] = ses
     setUd({ ...ud, registros: r })
+  }
+  function etiquetaPR(ej) {
+    const pr = calcularPRs(registros[ej.regId], ej.metrica)
+    if (ej.metrica === 'seg') return pr.maxSeg ? `🏆 ${pr.maxSeg}s` : null
+    if (ej.metrica === 'reps') return pr.maxReps ? `🏆 ${pr.maxReps} reps${pr.maxKg ? ` · +${pr.maxKg}kg` : ''}` : null
+    if (!pr.maxKg) return null
+    return `🏆 ${pr.maxKg}kg${pr.maxE1RM > pr.maxKg ? ` · 1RM≈${Math.round(pr.maxE1RM)}` : ''}`
   }
 
   // ── Peso corporal ──
@@ -631,9 +684,12 @@ export default function App() {
   function guardarSemana() {
     const semana = getWeekKey()
     const snapshot = {}
-    DIAS.forEach(d => d.ejercicios.forEach(ej => {
-      const max = getMaxValor(ej.id, ej.tipo)
-      if (max) { if (!snapshot[d.id]) snapshot[d.id] = {}; snapshot[d.id][ej.id] = { nombre: ej.nombre, max, tipo: ej.tipo } }
+    const visiblesHoy = construirDiasVisibles(DIAS, { alternativas: alternativasActivas, fecha: new Date(), objetivo: user?.objetivo, bloqueInicio: ud.bloqueInicio })
+    visiblesHoy.forEach(d => d.ejercicios.forEach(ej => {
+      const pr = calcularPRs(registros[ej.regId], ej.metrica)
+      const max = ej.metrica === 'seg' ? pr.maxSeg : ej.metrica === 'reps' ? pr.maxReps : pr.maxKg
+      const tipo = ej.metrica === 'seg' ? 'tiempo' : ej.metrica === 'reps' ? 'reps' : 'peso'
+      if (max) { if (!snapshot[d.id]) snapshot[d.id] = {}; snapshot[d.id][ej.regId] = { nombre: ej.nombre, max, tipo, e1rm: pr.maxE1RM || null } }
     }))
     setUd({ ...ud, progSemanal: { ...progSemanal, [semana]: { snapshot, peso: histPeso.at(-1)?.peso, ciclo: cicloActual, fecha: new Date().toLocaleDateString('es-ES') } } })
     setRevisionBanner({ tipo: 'ok', msg: `Semana ${semana} guardada` })
@@ -708,33 +764,16 @@ export default function App() {
   const semanasCiclo = semanasEnCiclo()
   const semanasRestantes = Math.max(0, cicloInfo.semanas - semanasCiclo)
 
-  // ── Alternativas de fitcron ───────────────────────────────────────────────
-  const alternativasActivas = ud.alternativasActivas || {}
-
-  function getZonaEjercicio(ej) {
-    // Buscar en fitcron por slug o nombre exacto
-    const match = fitcronEjercicios.find(e => e.slug === ej.id || e.nombre === ej.nombre)
-    return match?.zona || null
-  }
-
-  function getFitcronAlts(ej, n = 8) {
-    const grupo = matchMusculo(ej.musculo)
-    if (!grupo) return []
-    const zona = getZonaEjercicio(ej)
-    const pool = fitcronEjercicios.filter(e => e.musculo === grupo && e.gif && e.slug !== ej.id)
-    // Prioriza misma zona; si hay suficientes, devuelve solo esos; si no, completa con el resto
-    const mismaZona = zona ? pool.filter(e => e.zona === zona).sort(() => 0.5 - Math.random()) : []
-    const otraZona  = pool.filter(e => e.zona !== zona).sort(() => 0.5 - Math.random())
-    return [...mismaZona, ...otraZona].slice(0, n)
-  }
-  function seleccionarAlternativa(ejId, alt) {
-    const nuevas = { ...alternativasActivas, [ejId]: alt }
-    setUd({ ...ud, alternativasActivas: nuevas })
+  // ── Alternativas (catálogo con imágenes verificadas) ─────────────────────
+  // La elección se guarda por "hueco" del plan (slot) y el progreso por el
+  // ejercicio realizado (regId): cada alternativa tiene su propio historial.
+  function seleccionarAlternativa(slot, altId) {
+    setUd({ ...ud, alternativasActivas: { ...alternativasActivas, [slot]: altId } })
     setAltAbierta(null)
   }
-  function restaurarOriginal(ejId) {
+  function restaurarOriginal(slot) {
     const nuevas = { ...alternativasActivas }
-    delete nuevas[ejId]
+    delete nuevas[slot]
     setUd({ ...ud, alternativasActivas: nuevas })
   }
 
@@ -743,17 +782,10 @@ export default function App() {
     if (alerta.tipo === 'deload') {
       updateUser({ cicloActual: 'deload', cicloSemanaInicio: getWeekKey() })
     } else if (alerta.tipo === 'plateau' && alerta.ejId) {
-      const grupo = matchMusculo(alerta.ejMusculo || '')
-      const pool = fitcronEjercicios.filter(e => e.musculo === grupo && e.gif)
-      const ejActual = fitcronEjercicios.find(e => e.slug === alerta.ejId)
-      const zona = ejActual?.zona || null
-      const candidatos = zona
-        ? (pool.filter(e => e.zona === zona).length > 0 ? pool.filter(e => e.zona === zona) : pool)
-        : pool
-      if (candidatos.length > 0) {
-        const alt = candidatos[Math.floor(Math.random() * candidatos.length)]
-        setUd({ ...ud, alternativasActivas: { ...alternativasActivas, [alerta.ejId]: alt } })
-      }
+      const diaDe = DIAS_VIS.find(d => d.ejercicios.some(e => e.regId === alerta.ejId))
+      const ocupados = diaDe ? diaDe.ejercicios.map(e => e.regId) : []
+      const alt = alternativasDe(alerta.ejId, { evitarBarra: !!diaDe?._perfil?.evitarBarra, excluir: ocupados })[0]
+      if (alt) setUd({ ...ud, alternativasActivas: { ...alternativasActivas, [alerta.slot || alerta.ejId]: alt.id } })
     }
   }
 
@@ -765,10 +797,11 @@ export default function App() {
     registros: ud.registros || {},
     histPeso: ud.histPeso || [],
     actividades: ud.actividades || [],
-    DIAS,
+    DIAS: DIAS_VIS,
     perfilFisico: calcularPerfilFisico(dietaData || {}),
     sexo: dietaData?.sexo || null,
-  }), [user?.objetivo, user?.nivel, semanasCiclo, ud.registros, ud.histPeso, ud.actividades, DIAS, dietaData?.edad, dietaData?.pesoActual, dietaData?.altura, dietaData?.sexo])
+    hoy: fechaSel,
+  }), [user?.objetivo, user?.nivel, semanasCiclo, ud.registros, ud.histPeso, ud.actividades, DIAS_VIS, fechaSel, dietaData?.edad, dietaData?.pesoActual, dietaData?.altura, dietaData?.sexo])
   const cicloCompletado = semanasCiclo >= cicloInfo.semanas
   function cambiarCiclo(id) { updateUser({ cicloActual: id, cicloSemanaInicio: getWeekKey() }); setMostrarCiclos(false); setEjAbierto(null) }
 
@@ -846,7 +879,7 @@ export default function App() {
               {tab === 'entreno' ? '🏋️ Entreno' : tab === 'datos' ? '📊 Mis datos' : tab === 'dieta' ? '🥗 Nutrición' : '📈 Progreso'}
             </div>
             <div style={{ fontSize: 13, color: '#8e8e93', marginTop: 3 }}>
-              {tab === 'entreno' ? 'Rutina 5 días · Bajar grasa y ganar músculo' :
+              {tab === 'entreno' ? `Rutina ${DIAS.length} días · ${OBJETIVOS.find(o => o.id === user?.objetivo)?.nombre || 'Recomposición'}` :
                tab === 'datos' ? 'Perfil físico y seguimiento de peso' :
                tab === 'dieta' ? 'Plan personalizado de alimentación' : 'Historial y evolución semanal'}
             </div>
@@ -909,10 +942,11 @@ export default function App() {
             {revisionBanner && (
               <div style={{ background: '#f0fdf4', borderRadius: 14, padding: '12px 16px', marginBottom: 12, border: '1.5px solid #10b981' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: '#10b981', marginBottom: 6 }}>✅ Revisión semanal aplicada · {revisionBanner.semana}</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#10b981', marginBottom: 6 }}>{revisionBanner.semana ? `✅ Revisión semanal aplicada · ${revisionBanner.semana}` : '✅ Hecho'}</div>
                   <button onClick={() => setRevisionBanner(null)} style={{ background: 'none', border: 'none', color: '#10b981', fontSize: 16, cursor: 'pointer', padding: 0 }}>✕</button>
                 </div>
-                {revisionBanner.cambios.map((c, i) => (
+                {revisionBanner.msg && <div style={{ fontSize: 12, color: '#065f46' }}>{revisionBanner.msg}</div>}
+                {(revisionBanner.cambios || []).map((c, i) => (
                   <div key={i} style={{ fontSize: 12, color: '#065f46', marginBottom: 2 }}>{c}</div>
                 ))}
               </div>
@@ -1035,37 +1069,68 @@ export default function App() {
               )}
             </div>
 
-            {/* Ejercicios — solo días de semana */}
+            {/* Resumen de la sesión */}
+            {!esFinde && (() => {
+              let series = 0, vol = 0, prsHoy = 0
+              dia.ejercicios.forEach(ej => {
+                const ses = getSesion(ej.regId)
+                const prPrev = calcularPRs(registros[ej.regId], ej.metrica, { excluir: fechaSel })
+                const ss = seriesSesion(ses, ej.metrica)
+                series += ss.filter(x => x.ok).length
+                vol += volumenSesion(ses, ej.metrica)
+                if (ss.some(x => prsDeSerie(x, prPrev, ej.metrica).length)) prsHoy++
+              })
+              const totalSeries = dia.ejercicios.reduce((a, e) => a + e.series, 0)
+              if (!series && !vol) return null
+              return (
+                <div style={{ ...S.card, padding: '12px 16px', marginBottom: 12, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, textAlign: 'center' }}>
+                  <div><div style={{ fontSize: 18, fontWeight: 800, color: cicloInfo.color }}>{series}/{totalSeries}</div><div style={{ fontSize: 11, color: '#8e8e93' }}>series hechas</div></div>
+                  <div><div style={{ fontSize: 18, fontWeight: 800, color: '#1c1c1e' }}>{vol >= 1000 ? `${(vol / 1000).toFixed(1)}t` : `${Math.round(vol)}kg`}</div><div style={{ fontSize: 11, color: '#8e8e93' }}>volumen</div></div>
+                  <div><div style={{ fontSize: 18, fontWeight: 800, color: '#b45309' }}>{prsHoy}</div><div style={{ fontSize: 11, color: '#8e8e93' }}>🏆 récords</div></div>
+                </div>
+              )
+            })()}
+
+            {!esFinde && esFuturo && (
+              <div style={{ fontSize: 12, color: '#8e8e93', textAlign: 'center', marginBottom: 10 }}>Día futuro: puedes ver la rutina, el registro se activa ese día.</div>
+            )}
+
+            {/* Ejercicios */}
             {!esFinde && dia.ejercicios.map((ej, idx) => {
-              const open = ejAbierto === ej.id
-              const altOpen = altAbierta === ej.id
-              const altActiva = alternativasActivas[ej.id]
-              const grupoMuscular = normalizarMusculo(ej.musculo)
-              const seriesEfectivas = ej.series
-              // El ejercicio a mostrar puede ser el original o una alternativa seleccionada
-              const ejMostrado = altActiva ? { ...ej, nombre: altActiva.nombre, gif: altActiva.gif, musculo: altActiva.musculo } : ej
-              const max = getMaxValor(ej.id, ej.tipo)
-              const ultimo = getUltimoValor(ej.id)
-              const esDeload = String(ej.reps).includes('deload')
-              const etiquetaMax = max ? (ej.tipo === 'tiempo' ? `🕐 ${max}s` : ej.tipo === 'reps' ? `✓ ${max} reps` : `🏆 ${max}kg`) : null
-              const alts = getFitcronAlts(ej)
+              const open = ejAbierto === ej.slot
+              const altOpen = altAbierta === ej.slot
+              const esManual = ej.motivo === 'manual'
+              const esRotacion = ej.motivo === 'rotacion'
+              const sesion = getSesion(ej.regId)
+              const hechas = seriesSesion(sesion, ej.metrica).filter(x => x.ok).length
+              const prPrevio = calcularPRs(registros[ej.regId], ej.metrica, { excluir: fechaSel })
+              const etiquetaMax = etiquetaPR(ej)
+              const esDeload = String(ej.reps).includes('deload') || cicloActual === 'deload'
+              const ocupados = dia.ejercicios.map(e => e.regId)
+              const alts = alternativasDe(ej.regId, { evitarBarra: !!dia._perfil?.evitarBarra, excluir: ocupados })
+              const sug = reglas.recomendaciones[ej.regId]
+              const repsLabel = ej.metrica === 'seg' ? `${ej.reps}s` : ej.reps
+              const borde = open ? `2px solid ${cicloInfo.color}` : hechas >= ej.series ? '2px solid #10b981' : esManual ? '2px solid #a7f3d0' : '2px solid transparent'
 
               return (
-                <div key={ej.id} style={{ ...S.card, border: open ? `2px solid ${cicloInfo.color}` : altActiva ? `2px solid #10b981` : '2px solid transparent' }}>
-                  <button onClick={() => { setEjAbierto(open ? null : ej.id); setAltAbierta(null) }}
-                    style={{ width: '100%', padding: '14px 16px', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={{ width: 34, height: 34, borderRadius: 10, background: altActiva ? '#dcfce7' : cicloInfo.bg, color: altActiva ? '#10b981' : cicloInfo.color, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{altActiva ? '🔄' : idx + 1}</div>
-                    <div style={{ flex: 1, textAlign: 'left' }}>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: '#1c1c1e' }}>{ejMostrado.nombre}</div>
-                      <div style={{ fontSize: 12, color: '#8e8e93', marginTop: 2 }}>{ejMostrado.musculo}</div>
-                      {ej._sustituido && (
-                        <div style={{ fontSize: 10, fontWeight: 700, color: '#f59e0b', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 6, padding: '1px 6px', marginTop: 3, display: 'inline-block' }}>
-                          ⚡ Adaptado · antes: {ej._sustituido}
-                        </div>
-                      )}
+                <div key={ej.slot} style={{ ...S.card, border: borde }}>
+                  <button onClick={() => { setEjAbierto(open ? null : ej.slot); setAltAbierta(null) }}
+                    style={{ width: '100%', padding: '12px 14px', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <img src={ej.gif} alt="" referrerPolicy="no-referrer" loading="lazy"
+                      style={{ width: 46, height: 46, borderRadius: 10, objectFit: 'contain', background: '#fff', border: '1px solid #f2f2f7', flexShrink: 0 }}
+                      onError={e => { e.target.style.visibility = 'hidden' }} />
+                    <div style={{ flex: 1, textAlign: 'left', minWidth: 0 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: '#1c1c1e' }}>{idx + 1}. {ej.nombre}</div>
+                      <div style={{ fontSize: 12, color: '#8e8e93', marginTop: 2 }}>{ej.musculo}</div>
+                      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 3 }}>
+                        {ej._sustituido && <span style={{ fontSize: 10, fontWeight: 700, color: '#b45309', background: '#fffbeb', borderRadius: 6, padding: '1px 6px' }}>⚡ Adaptado · antes: {ej._sustituido}</span>}
+                        {esRotacion && <span style={{ fontSize: 10, fontWeight: 700, color: '#6366f1', background: '#eef2ff', borderRadius: 6, padding: '1px 6px' }}>🔁 Rotación del bloque · sustituye a {ej.nombrePlan}</span>}
+                        {esManual && <span style={{ fontSize: 10, fontWeight: 700, color: '#047857', background: '#dcfce7', borderRadius: 6, padding: '1px 6px' }}>🔄 Elegido por ti · plan: {ej.nombrePlan}</span>}
+                      </div>
                     </div>
-                    <div style={{ textAlign: 'right', marginRight: 6 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: cicloInfo.color }}>{seriesEfectivas}×{ej.tipo === 'tiempo' ? `${ej.reps}s` : ej.reps}</div>
+                    <div style={{ textAlign: 'right', marginRight: 4, flexShrink: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: cicloInfo.color }}>{ej.series}×{repsLabel}</div>
+                      {hechas > 0 && <div style={{ fontSize: 11, fontWeight: 700, color: '#10b981' }}>✓ {hechas}/{ej.series}</div>}
                       {etiquetaMax && <div style={{ fontSize: 11, color: '#8e8e93' }}>{etiquetaMax}</div>}
                     </div>
                     <span style={{ color: '#c7c7cc', fontSize: 11 }}>{open ? '▲' : '▼'}</span>
@@ -1073,148 +1138,120 @@ export default function App() {
 
                   {open && (
                     <div style={{ borderTop: '1px solid #f2f2f7', padding: '14px 16px' }}>
-                      {/* GIF — contain para no recortar la imagen */}
                       <div style={{ borderRadius: 12, overflow: 'hidden', marginBottom: 12, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 180, position: 'relative' }}>
-                        <img src={ejMostrado.gif} alt={ejMostrado.nombre} referrerPolicy="no-referrer"
+                        <img src={ej.gif} alt={ej.nombre} referrerPolicy="no-referrer"
                           style={{ width: '100%', maxHeight: 280, objectFit: 'contain', display: 'block' }}
                           onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex' }} />
                         <div style={{ display: 'none', position: 'absolute', inset: 0, flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, color: '#8e8e93' }}>
                           <span style={{ fontSize: 40 }}>🏋️</span>
-                          <span style={{ fontSize: 13 }}>{ejMostrado.nombre}</span>
+                          <span style={{ fontSize: 13 }}>{ej.nombre}</span>
                         </div>
                       </div>
 
                       <div style={{ background: cicloInfo.bg, borderRadius: 10, padding: '10px 12px', marginBottom: 14 }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: cicloInfo.color, marginBottom: 3 }}>{cicloInfo.nombre}: {seriesEfectivas} series × {ej.tipo === 'tiempo' ? `${ej.reps} seg` : ej.reps}</div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: cicloInfo.color, marginBottom: 3 }}>{cicloInfo.nombre}: {ej.series} series × {ej.metrica === 'seg' ? `${ej.reps} seg` : `${ej.reps} reps`}</div>
                         <div style={{ fontSize: 12, color: '#3c3c43', lineHeight: 1.4 }}>{ej.tip}</div>
                         {esDeload && <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, fontWeight: 600 }}>⚡ Deload: usa ~50% de tu peso habitual</div>}
+                        {esRotacion && <div style={{ fontSize: 11, color: '#6366f1', marginTop: 4 }}>🔁 Variante de este bloque de entrenamiento (próximo cambio de bloque en {semanasHastaRotacion(selectedDate)} sem). Su progreso se guarda aparte.</div>}
                       </div>
 
-                      <div style={{ fontSize: 13, fontWeight: 600, color: '#3c3c43', marginBottom: 10 }}>
-                        {ej.tipo === 'tiempo' ? 'Tiempo (seg) por serie:' : ej.tipo === 'reps' ? 'Repeticiones por serie:' : ej.tipo === 'peso_reps' ? 'Peso (kg) y reps por serie:' : 'Peso (kg) por serie:'}
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(seriesEfectivas, ej.tipo === 'peso_reps' ? 2 : 4)}, 1fr)`, gap: 8, marginBottom: 10 }}>
-                        {Array.from({ length: seriesEfectivas }, (_, i) => i + 1).map(s => (
-                          <EjercicioInput key={s} ej={ej} serie={s}
-                            valor={getValorHoy(ej.id, s)}
-                            onChange={v => setValorEj(ej.id, s, v)}
-                            ultimoValor={s === 1 ? ultimo : null} />
-                        ))}
-                      </div>
+                      {/* Sugerencia de progresión */}
+                      {sug?.mensaje && (() => {
+                        const colorMap = { subir_peso: '#10b981', estancado: '#f97316', mantener: '#6366f1' }
+                        const bgMap = { subir_peso: '#f0fdf4', estancado: '#fff7ed', mantener: '#eef2ff' }
+                        const color = colorMap[sug.estado] || '#8e8e93'
+                        const puedeAplicar = !esFuturo && (sug.kgObjetivo || sug.repsObjetivo || sug.segObjetivo)
+                        return (
+                          <div style={{ background: bgMap[sug.estado] || '#f5f5f7', borderRadius: 10, padding: '10px 12px', marginBottom: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: 10, fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>
+                                {sug.estado === 'subir_peso' ? '🚀 Sube de peso' : sug.estado === 'estancado' ? '⚠️ Estancamiento' : '🎯 Objetivo sesión'}
+                              </div>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: '#1c1c1e' }}>{sug.mensaje}</div>
+                            </div>
+                            {puedeAplicar && (
+                              <button onClick={() => aplicarSugerencia(ej, sug)}
+                                style={{ flexShrink: 0, padding: '7px 12px', borderRadius: 10, border: 'none', background: color, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                                Rellenar ↗
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })()}
 
-                      {/* Botón de descanso */}
+                      <TablaSeries key={`${ej.regId}-${fechaSel}`} ej={ej} sesion={sesion} sesionPrevia={getSesionPrevia(ej.regId)}
+                        prPrevio={prPrevio} sug={sug} editable={!esFuturo} color={cicloInfo.color}
+                        onChange={(n, patch) => guardarSerie(ej, n, patch)}
+                        onCheck={(n, ok, ph) => marcarSerie(ej, n, ok, ph, idx === 0)} />
+
+                      {/* Descanso manual */}
                       <div style={{ display: 'flex', gap: 6, marginBottom: 12 }}>
                         {[60, 90, 120, 180].map(seg => (
                           <button key={seg} onClick={() => iniciarDescanso(ej.nombre, seg)}
                             style={{ flex: 1, padding: '8px 4px', borderRadius: 10, border: '1px solid #e5e5ea', background: '#f5f5f7', color: '#3c3c43', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-                            ⏱ {seg < 60 ? `${seg}s` : `${seg / 60}'`}{seg % 60 !== 0 ? `${seg % 60}s` : ''}
+                            ⏱ {seg < 60 ? `${seg}s` : `${Math.floor(seg / 60)}'`}{seg % 60 !== 0 && seg > 60 ? `${seg % 60}` : ''}
                           </button>
                         ))}
                       </div>
 
-                      {/* Panel de progresión guiada */}
-                      {(() => {
-                        const sug = reglas.recomendaciones[ej.id]
-                        if (!sug) return null
-                        const colorMap = { subir_peso: '#10b981', estancado: '#f97316', mantener: '#6366f1', sin_datos: '#8e8e93' }
-                        const bgMap = { subir_peso: '#f0fdf4', estancado: '#fff7ed', mantener: '#eef2ff', sin_datos: '#f5f5f7' }
-                        const color = colorMap[sug.estado] || '#8e8e93'
-                        const bg = bgMap[sug.estado] || '#f5f5f7'
-                        const puedeAplicar = (sug.pesoSugerido || sug.repsObjetivo) && sug.estado !== 'sin_datos'
-                        return (
-                          <div style={{ marginBottom: 14 }}>
-                            {/* Sugerencia principal */}
-                            {sug.mensaje && (
-                              <div style={{ background: bg, borderRadius: 10, padding: '10px 12px', marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                                <div style={{ flex: 1 }}>
-                                  <div style={{ fontSize: 10, fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 2 }}>
-                                    {sug.estado === 'subir_peso' ? '🚀 Sube de peso' : sug.estado === 'estancado' ? '⚠️ Estancamiento' : '🎯 Objetivo sesión'}
-                                  </div>
-                                  <div style={{ fontSize: 13, fontWeight: 700, color: '#1c1c1e' }}>{sug.mensaje}</div>
-                                </div>
-                                {puedeAplicar && (
-                                  <button onClick={() => aplicarSugerencia(ej, sug, seriesEfectivas)}
-                                    style={{ flexShrink: 0, padding: '7px 12px', borderRadius: 10, border: 'none', background: color, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                                    Usar ↗
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                            {/* Mini historial últimas sesiones */}
-                            {sug.historialReciente?.length > 0 && (
-                              <div style={{ display: 'flex', gap: 6 }}>
-                                {sug.historialReciente.map((h, i) => {
-                                  const isLast = i === sug.historialReciente.length - 1
-                                  const isBetter = i > 0 && h.valor > sug.historialReciente[i - 1].valor
-                                  return (
-                                    <div key={i} style={{ flex: 1, background: isLast ? '#f0fdf4' : '#f5f5f7', borderRadius: 8, padding: '5px 6px', textAlign: 'center', border: isLast ? '1px solid #10b981' : '1px solid transparent' }}>
-                                      <div style={{ fontSize: 9, color: '#8e8e93', marginBottom: 2 }}>{h.fecha.split('/').slice(0,2).join('/')}</div>
-                                      <div style={{ fontSize: 12, fontWeight: 700, color: isLast ? '#10b981' : '#1c1c1e' }}>{h.display}</div>
-                                      {isBetter && <div style={{ fontSize: 8, color: '#10b981' }}>▲</div>}
-                                    </div>
-                                  )
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })()}
-
-                      {/* Alternativas de fitcron */}
-                      <div style={{ display: 'flex', gap: 8, marginBottom: altOpen ? 10 : 0 }}>
-                        <button onClick={() => setAltAbierta(altOpen ? null : ej.id)}
-                          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 14px', borderRadius: 10, border: `1px solid ${cicloInfo.color}`, background: 'transparent', color: cicloInfo.color, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                          🔄 {altOpen ? 'Ocultar' : `Alternativas (${alts.length})`}
-                        </button>
-                        {altActiva && (
-                          <button onClick={() => restaurarOriginal(ej.id)}
-                            style={{ padding: '9px 12px', borderRadius: 10, border: '1px solid #e5e5ea', background: '#f5f5f7', color: '#8e8e93', fontSize: 13, cursor: 'pointer', fontWeight: 600 }}>
-                            ↩ Original
-                          </button>
-                        )}
-                      </div>
-                      {altOpen && alts.length > 0 && (() => {
-                        const zonaActual = getZonaEjercicio(ej)
-                        const ZONA_LABEL = {
-                          alto: 'Pecho alto', medio: 'Pecho medio', bajo: 'Pecho bajo', interno: 'Pecho interno',
-                          anterior: 'Deltoides anterior', lateral: 'Deltoides lateral', posterior: 'Deltoides posterior',
-                          cabeza_larga: 'Cabeza larga', cabeza_corta: 'Cabeza corta', braquial: 'Braquial',
-                          dorsal: 'Dorsal ancho', trapecio: 'Trapecio', romboides: 'Romboides', lumbar: 'Lumbar',
-                          cuadriceps: 'Cuádriceps', isquiotibiales: 'Isquiotibiales', gluteos: 'Glúteos', gemelos: 'Gemelos',
-                          recto: 'Recto abdominal', oblicuos: 'Oblicuos', transverso: 'Transverso',
-                          flexores: 'Flexores', extensores: 'Extensores', general: 'General', cardio: 'Cardio',
-                        }
-                        return (
-                          <div style={{ background: '#f5f5f7', borderRadius: 12, overflow: 'hidden' }}>
-                            {alts.map((alt, i) => {
-                              const mismaZona = alt.zona && zonaActual && alt.zona === zonaActual
+                      {/* Historial: mejor serie de las últimas sesiones */}
+                      {sug?.historialReciente?.length > 0 && (
+                        <div style={{ marginBottom: 12 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: '#8e8e93', marginBottom: 6 }}>MEJOR SERIE · ÚLTIMAS SESIONES</div>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            {sug.historialReciente.map((h, i) => {
+                              const isLast = i === sug.historialReciente.length - 1
+                              const isBetter = i > 0 && h.valor > sug.historialReciente[i - 1].valor
                               return (
-                                <button key={i} onClick={() => seleccionarAlternativa(ej.id, alt)}
-                                  style={{ width: '100%', padding: '12px 14px', borderBottom: i < alts.length - 1 ? '1px solid #e5e5ea' : 'none', background: mismaZona ? '#f0fdf4' : 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left' }}>
-                                  <img src={alt.gif} alt={alt.nombre} referrerPolicy="no-referrer"
-                                    style={{ width: 56, height: 56, borderRadius: 8, objectFit: 'contain', background: '#fff', flexShrink: 0 }}
-                                    onError={e => { e.target.style.display = 'none' }} />
-                                  <div style={{ flex: 1 }}>
-                                    <div style={{ fontSize: 13, fontWeight: 600, color: '#1c1c1e' }}>{alt.nombre}</div>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 3, flexWrap: 'wrap' }}>
-                                      <span style={{ fontSize: 10, color: '#8e8e93' }}>{alt.musculo}</span>
-                                      {alt.zona && (
-                                        <span style={{ fontSize: 10, fontWeight: 700, color: mismaZona ? '#10b981' : '#8e8e93', background: mismaZona ? '#dcfce7' : '#e5e5ea', padding: '1px 6px', borderRadius: 6 }}>
-                                          {mismaZona ? '✓ ' : ''}{ZONA_LABEL[alt.zona] || alt.zona}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                  <span style={{ fontSize: 12, color: cicloInfo.color, fontWeight: 700, flexShrink: 0 }}>Usar →</span>
-                                </button>
+                                <div key={i} style={{ flex: 1, background: isLast ? '#f0fdf4' : '#f5f5f7', borderRadius: 8, padding: '5px 4px', textAlign: 'center', border: isLast ? '1px solid #10b981' : '1px solid transparent', minWidth: 0 }}>
+                                  <div style={{ fontSize: 9, color: '#8e8e93', marginBottom: 2 }}>{h.fecha.split('/').slice(0, 2).join('/')}</div>
+                                  <div style={{ fontSize: 11, fontWeight: 700, color: isLast ? '#10b981' : '#1c1c1e', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{h.display}</div>
+                                  {isBetter && <div style={{ fontSize: 8, color: '#10b981' }}>▲</div>}
+                                </div>
                               )
                             })}
                           </div>
-                        )
-                      })()}
-                      {altOpen && alts.length === 0 && (
-                        <div style={{ padding: '16px', textAlign: 'center', color: '#8e8e93', fontSize: 13 }}>
-                          No hay alternativas disponibles para este músculo.
+                        </div>
+                      )}
+
+                      {/* Alternativas */}
+                      <div style={{ display: 'flex', gap: 8, marginBottom: altOpen ? 10 : 0 }}>
+                        <button onClick={() => setAltAbierta(altOpen ? null : ej.slot)}
+                          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 14px', borderRadius: 10, border: `1px solid ${cicloInfo.color}`, background: 'transparent', color: cicloInfo.color, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                          🔄 {altOpen ? 'Ocultar' : `Cambiar ejercicio (${alts.length})`}
+                        </button>
+                        {(esManual || esRotacion) && (
+                          <button onClick={() => esManual ? restaurarOriginal(ej.slot) : seleccionarAlternativa(ej.slot, ej.slot)}
+                            style={{ padding: '9px 12px', borderRadius: 10, border: '1px solid #e5e5ea', background: '#f5f5f7', color: '#8e8e93', fontSize: 13, cursor: 'pointer', fontWeight: 600 }}>
+                            ↩ {esManual ? 'Volver al plan' : 'Fijar original'}
+                          </button>
+                        )}
+                      </div>
+                      {altOpen && (
+                        <div style={{ background: '#f5f5f7', borderRadius: 12, overflow: 'hidden' }}>
+                          {alts.map((alt, i) => {
+                            const misma = alt.familia && alt.familia === CATALOGO[ej.regId]?.familia
+                            const prAlt = etiquetaPR({ ...alt, regId: alt.id })
+                            return (
+                              <button key={alt.id} onClick={() => seleccionarAlternativa(ej.slot, alt.id)}
+                                style={{ width: '100%', padding: '10px 12px', borderBottom: i < alts.length - 1 ? '1px solid #e5e5ea' : 'none', background: misma ? '#f0fdf4' : 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12, textAlign: 'left' }}>
+                                <img src={alt.gif} alt={alt.nombre} referrerPolicy="no-referrer" loading="lazy"
+                                  style={{ width: 56, height: 56, borderRadius: 8, objectFit: 'contain', background: '#fff', flexShrink: 0 }}
+                                  onError={e => { e.target.style.visibility = 'hidden' }} />
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <div style={{ fontSize: 13, fontWeight: 600, color: '#1c1c1e' }}>{alt.nombre}</div>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginTop: 3, flexWrap: 'wrap' }}>
+                                    <span style={{ fontSize: 10, fontWeight: 700, color: misma ? '#10b981' : '#8e8e93', background: misma ? '#dcfce7' : '#e5e5ea', padding: '1px 6px', borderRadius: 6 }}>
+                                      {misma ? '✓ Mismo patrón' : `${alt.grupo} · ${alt.zona.replace('_', ' ')}`}
+                                    </span>
+                                    {prAlt && <span style={{ fontSize: 10, color: '#8e8e93' }}>{prAlt}</span>}
+                                  </div>
+                                </div>
+                                <span style={{ fontSize: 12, color: cicloInfo.color, fontWeight: 700, flexShrink: 0 }}>Usar →</span>
+                              </button>
+                            )
+                          })}
+                          {alts.length === 0 && <div style={{ padding: 16, textAlign: 'center', color: '#8e8e93', fontSize: 13 }}>No hay alternativas para este ejercicio.</div>}
                         </div>
                       )}
                     </div>

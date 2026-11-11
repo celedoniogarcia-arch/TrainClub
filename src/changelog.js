@@ -23,4 +23,17 @@ export const CHANGELOG = {
       { icon: '🗺️', texto: 'Guía interactiva de bienvenida para nuevos usuarios' },
     ],
   },
+  3: {
+    titulo: '¡TrainClub se actualiza!',
+    subtitulo: 'Registro serie a serie y récords de verdad',
+    tipo: 'update',
+    novedades: [
+      { icon: '📝', texto: 'Cada serie registra kg y repeticiones (o segundos en planchas), con la columna "Anterior" de tu última sesión' },
+      { icon: '✅', texto: 'Marca cada serie como hecha: el descanso arranca solo' },
+      { icon: '🏆', texto: 'Las marcas personales cuentan en cualquier serie, no solo en la primera, e incluyen 1RM estimado' },
+      { icon: '🔄', texto: 'Cada alternativa guarda su propio progreso' },
+      { icon: '🔁', texto: 'Rotación automática de ejercicios cada 4 semanas para variar el estímulo' },
+      { icon: '🖼️', texto: 'Imágenes revisadas: cada ejercicio muestra su movimiento correcto' },
+    ],
+  },
 }

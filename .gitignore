@@ -1,3 +1,8 @@
 node_modules/
 .claude/
 .vercel
+
+# Variables de entorno (secretos)
+.env
+.env.local
+.env.*.local
