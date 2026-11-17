@@ -3,17 +3,17 @@ import { signInWithEmail, signUpWithEmail, signInWithGoogle, supabase } from './
 
 const S = {
   page: {
-    minHeight: '100dvh', background: '#f5f5f7', display: 'flex',
+    minHeight: '100dvh', background: 'var(--c-f5f5f7)', display: 'flex',
     flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
     padding: '24px 20px', maxWidth: 430, margin: '0 auto',
   },
   card: {
-    background: '#fff', borderRadius: 24, padding: '32px 24px',
+    background: 'var(--surface)', borderRadius: 24, padding: '32px 24px',
     width: '100%', boxShadow: '0 2px 20px rgba(0,0,0,0.08)',
   },
   input: {
     width: '100%', padding: '14px 16px', borderRadius: 12, fontSize: 16,
-    border: '1.5px solid #e5e5ea', background: '#f9f9fb', outline: 'none',
+    border: '1.5px solid var(--c-e5e5ea)', background: 'var(--c-f9f9fb)', outline: 'none',
     boxSizing: 'border-box', marginBottom: 12,
   },
   btnPrimary: {
@@ -22,8 +22,8 @@ const S = {
     cursor: 'pointer', marginBottom: 12,
   },
   btnGoogle: {
-    width: '100%', padding: '14px', borderRadius: 14, border: '1.5px solid #e5e5ea',
-    background: '#fff', color: '#1c1c1e', fontSize: 15, fontWeight: 600,
+    width: '100%', padding: '14px', borderRadius: 14, border: '1.5px solid var(--c-e5e5ea)',
+    background: 'var(--surface)', color: 'var(--c-1c1c1e)', fontSize: 15, fontWeight: 600,
     cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
     gap: 10, marginBottom: 12,
   },
@@ -32,11 +32,11 @@ const S = {
     fontWeight: 600, cursor: 'pointer', textDecoration: 'underline',
   },
   error: {
-    background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10,
-    padding: '10px 14px', fontSize: 13, color: '#dc2626', marginBottom: 12,
+    background: 'var(--c-fef2f2)', border: '1px solid var(--c-fecaca)', borderRadius: 10,
+    padding: '10px 14px', fontSize: 13, color: 'var(--c-dc2626)', marginBottom: 12,
   },
   success: {
-    background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10,
+    background: 'var(--c-f0fdf4)', border: '1px solid #bbf7d0', borderRadius: 10,
     padding: '10px 14px', fontSize: 13, color: '#16a34a', marginBottom: 12,
   },
 }
@@ -102,13 +102,13 @@ export default function AuthScreen() {
       {/* Logo / marca */}
       <div style={{ textAlign: 'center', marginBottom: 32 }}>
         <div style={{ fontSize: 52, marginBottom: 8 }}>🏋️</div>
-        <div style={{ fontSize: 26, fontWeight: 800, color: '#1c1c1e' }}>TrainClub</div>
-        <div style={{ fontSize: 14, color: '#8e8e93', marginTop: 4 }}>Tu entrenador de familia</div>
+        <div style={{ fontSize: 26, fontWeight: 800, color: 'var(--c-1c1c1e)' }}>TrainClub</div>
+        <div style={{ fontSize: 14, color: 'var(--c-8e8e93)', marginTop: 4 }}>Tu entrenador de familia</div>
       </div>
 
       <div style={S.card}>
-        <div style={{ fontSize: 22, fontWeight: 800, color: '#1c1c1e', marginBottom: 4 }}>{titulo}</div>
-        <div style={{ fontSize: 14, color: '#8e8e93', marginBottom: 24 }}>{subtitulo}</div>
+        <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--c-1c1c1e)', marginBottom: 4 }}>{titulo}</div>
+        <div style={{ fontSize: 14, color: 'var(--c-8e8e93)', marginBottom: 24 }}>{subtitulo}</div>
 
         {error && <div style={S.error}>⚠️ {error}</div>}
         {mensaje && <div style={S.success}>✅ {mensaje}</div>}
@@ -134,9 +134,9 @@ export default function AuthScreen() {
         {modo === 'login' && (
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-              <div style={{ flex: 1, height: 1, background: '#e5e5ea' }} />
-              <span style={{ fontSize: 12, color: '#8e8e93' }}>o continúa con</span>
-              <div style={{ flex: 1, height: 1, background: '#e5e5ea' }} />
+              <div style={{ flex: 1, height: 1, background: 'var(--c-e5e5ea)' }} />
+              <span style={{ fontSize: 12, color: 'var(--c-8e8e93)' }}>o continúa con</span>
+              <div style={{ flex: 1, height: 1, background: 'var(--c-e5e5ea)' }} />
             </div>
             <button onClick={handleGoogle} style={{ ...S.btnGoogle, opacity: loading ? 0.6 : 1 }} disabled={loading}>
               <svg width="20" height="20" viewBox="0 0 24 24">
@@ -157,7 +157,7 @@ export default function AuthScreen() {
               <button onClick={() => { setModo('registro'); setError(null); setMensaje(null) }} style={S.link}>
                 ¿No tienes cuenta? Crear una
               </button>
-              <button onClick={() => { setModo('reset'); setError(null); setMensaje(null) }} style={{ ...S.link, color: '#8e8e93', fontSize: 13 }}>
+              <button onClick={() => { setModo('reset'); setError(null); setMensaje(null) }} style={{ ...S.link, color: 'var(--c-8e8e93)', fontSize: 13 }}>
                 Olvidé mi contraseña
               </button>
             </div>
@@ -170,7 +170,7 @@ export default function AuthScreen() {
         </div>
       </div>
 
-      <div style={{ fontSize: 11, color: '#c7c7cc', marginTop: 24, textAlign: 'center' }}>
+      <div style={{ fontSize: 11, color: 'var(--c-c7c7cc)', marginTop: 24, textAlign: 'center' }}>
         Tus datos se guardan de forma segura.<br />No compartimos información con terceros.
       </div>
     </div>

@@ -19,9 +19,9 @@ const num = v => (v === '' || v == null || isNaN(Number(v)) ? null : Number(v))
 
 // Normaliza una serie (nueva u antigua) según la métrica del ejercicio
 export function parseSerie(raw, metrica = 'kg_reps') {
-  if (raw == null || raw === '') return { kg: null, reps: null, seg: null, ok: false }
+  if (raw == null || raw === '') return { kg: null, reps: null, seg: null, rpe: null, ok: false }
   if (typeof raw === 'object') {
-    return { kg: num(raw.kg), reps: num(raw.reps), seg: num(raw.seg), ok: !!raw.ok }
+    return { kg: num(raw.kg), reps: num(raw.reps), seg: num(raw.seg), rpe: num(raw.rpe), ok: !!raw.ok }
   }
   const s = String(raw)
   if (s.includes('|')) {
@@ -140,4 +140,50 @@ export function descansoRecomendado(cicloId, esPrincipal) {
   if (cicloId === 'definicion') return 45
   if (cicloId === 'deload')     return 60
   return esPrincipal ? 120 : 90
+}
+
+// ─── EVOLUCIÓN (gráficas) ────────────────────────────────────────────────────
+// Un punto por sesión: mejor 1RM estimado, peso máximo, volumen, reps y segundos
+export function evolucion(regEj = {}, metrica = 'kg_reps') {
+  return historialOrdenado(regEj).map(([fecha, ses]) => {
+    const ss = seriesSesion(ses, metrica)
+    return {
+      fecha,
+      e1rm: Math.max(0, ...ss.map(s => e1RM(s.kg, s.reps))),
+      kg: Math.max(0, ...ss.map(s => s.kg || 0)),
+      reps: Math.max(0, ...ss.map(s => s.reps || 0)),
+      seg: Math.max(0, ...ss.map(s => s.seg || 0)),
+      vol: volumenSesion(ses, metrica),
+    }
+  }).filter(p => p.e1rm || p.kg || p.reps || p.seg)
+}
+
+// ─── CALCULADORA DE DISCOS ───────────────────────────────────────────────────
+export const DISCOS_DEFECTO = [25, 20, 15, 10, 5, 2.5, 1.25]
+
+// Discos por lado para llegar a `total` kg con una barra de `barra` kg
+export function discosPorLado(total, barra = 20, disponibles = DISCOS_DEFECTO) {
+  let resto = +((total - barra) / 2).toFixed(3)
+  if (!(resto > 0)) return { discos: [], sobra: 0, real: barra }
+  const discos = []
+  for (const d of disponibles) {
+    while (resto + 1e-9 >= d) { discos.push(d); resto = +(resto - d).toFixed(3) }
+  }
+  return { discos, sobra: resto, real: +(total - resto * 2).toFixed(2) }
+}
+
+const redondear = (kg, paso = 2.5) => Math.round(kg / paso) * paso
+
+// Series de aproximación antes de la serie efectiva (barra vacía → 90 %)
+export function calentamiento(objetivo, barra = 20) {
+  if (!(objetivo > barra)) return []
+  const pasos = [[0, 10], [0.4, 8], [0.6, 5], [0.8, 3], [0.9, 1]]
+  const out = []
+  for (const [pct, reps] of pasos) {
+    const kg = pct === 0 ? barra : Math.max(barra, redondear(objetivo * pct))
+    if (kg >= objetivo) continue
+    if (out.length && out.at(-1).kg === kg) continue
+    out.push({ kg, reps, pct })
+  }
+  return out
 }

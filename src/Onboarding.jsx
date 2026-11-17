@@ -3,7 +3,7 @@ import { CHANGELOG } from './changelog.js'
 
 // Incrementa este número cada vez que quieras que la guía vuelva a aparecer.
 // Añade la entrada correspondiente en changelog.js antes de subir.
-export const ONBOARDING_VERSION = 4
+export const ONBOARDING_VERSION = 5
 
 const TABS_NAV = [
   { id: 'entreno',  icon: '🏋️', label: 'Entreno'  },
@@ -81,17 +81,17 @@ function NovedadesScreen({ onFinish }) {
       <div style={{
         position: 'relative', zIndex: 1,
         width: '100%', maxWidth: 390, margin: '0 20px',
-        background: '#fff', borderRadius: 24,
+        background: 'var(--surface)', borderRadius: 24,
         padding: '32px 24px 28px',
         boxShadow: '0 24px 60px rgba(0,0,0,0.35)',
       }}>
         {/* Cabecera */}
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
           <div style={{ fontSize: 48, lineHeight: 1, marginBottom: 10 }}>🎉</div>
-          <div style={{ fontSize: 20, fontWeight: 800, color: '#1c1c1e', lineHeight: 1.2 }}>
+          <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--c-1c1c1e)', lineHeight: 1.2 }}>
             {entry.titulo || 'Novedades'}
           </div>
-          <div style={{ fontSize: 13, color: '#8e8e93', marginTop: 5 }}>
+          <div style={{ fontSize: 13, color: 'var(--c-8e8e93)', marginTop: 5 }}>
             {entry.subtitulo || ''}
           </div>
         </div>
@@ -101,10 +101,10 @@ function NovedadesScreen({ onFinish }) {
           {(entry.novedades || []).map((n, i) => (
             <div key={i} style={{
               display: 'flex', alignItems: 'flex-start', gap: 12,
-              background: '#f5f5f7', borderRadius: 14, padding: '12px 14px',
+              background: 'var(--c-f5f5f7)', borderRadius: 14, padding: '12px 14px',
             }}>
               <span style={{ fontSize: 24, lineHeight: 1, flexShrink: 0 }}>{n.icon}</span>
-              <span style={{ fontSize: 14, color: '#1c1c1e', lineHeight: 1.5 }}>{n.texto}</span>
+              <span style={{ fontSize: 14, color: 'var(--c-1c1c1e)', lineHeight: 1.5 }}>{n.texto}</span>
             </div>
           ))}
         </div>
@@ -152,14 +152,14 @@ function TutorialScreen({ onFinish }) {
         padding: '0 20px',
         paddingBottom: tabIdx >= 0 ? 110 : 20,
       }}>
-        <div style={{ background: '#fff', borderRadius: 24, padding: '32px 24px 28px', boxShadow: '0 24px 60px rgba(0,0,0,0.35)' }}>
+        <div style={{ background: 'var(--surface)', borderRadius: 24, padding: '32px 24px 28px', boxShadow: '0 24px 60px rgba(0,0,0,0.35)' }}>
 
           <div style={{ textAlign: 'center', marginBottom: 16 }}>
             <div style={{ fontSize: 54, lineHeight: 1, marginBottom: 12 }}>{current.icon}</div>
-            <div style={{ fontSize: 21, fontWeight: 800, color: '#1c1c1e', lineHeight: 1.25 }}>{current.titulo}</div>
+            <div style={{ fontSize: 21, fontWeight: 800, color: 'var(--c-1c1c1e)', lineHeight: 1.25 }}>{current.titulo}</div>
           </div>
 
-          <div style={{ fontSize: 15, color: '#3c3c43', lineHeight: 1.65, textAlign: 'center', marginBottom: 26 }}>
+          <div style={{ fontSize: 15, color: 'var(--c-3c3c43)', lineHeight: 1.65, textAlign: 'center', marginBottom: 26 }}>
             {current.texto}
           </div>
 
@@ -167,7 +167,7 @@ function TutorialScreen({ onFinish }) {
             {STEPS_TUTORIAL.map((_, i) => (
               <div key={i} onClick={() => setStep(i)} style={{
                 width: i === step ? 22 : 7, height: 7, borderRadius: 4,
-                background: i === step ? current.color : '#e5e5ea',
+                background: i === step ? current.color : 'var(--c-e5e5ea)',
                 cursor: 'pointer', transition: 'all 0.22s ease',
               }} />
             ))}
@@ -175,7 +175,7 @@ function TutorialScreen({ onFinish }) {
 
           <div style={{ display: 'flex', gap: 10 }}>
             {!isFirst && (
-              <button onClick={anterior} style={{ flex: 1, padding: '13px', borderRadius: 14, background: '#f5f5f7', color: '#8e8e93', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 15 }}>← Atrás</button>
+              <button onClick={anterior} style={{ flex: 1, padding: '13px', borderRadius: 14, background: 'var(--c-f5f5f7)', color: 'var(--c-8e8e93)', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 15 }}>← Atrás</button>
             )}
             <button onClick={siguiente} style={{ flex: 2, padding: '14px', borderRadius: 14, background: current.color, color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 15, boxShadow: `0 4px 14px ${current.color}55` }}>
               {isLast ? (current.cta || 'Empezar') : 'Siguiente →'}
@@ -183,7 +183,7 @@ function TutorialScreen({ onFinish }) {
           </div>
 
           {!isLast && (
-            <button onClick={finish} style={{ display: 'block', margin: '14px auto 0', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#aeaeb2', fontWeight: 500 }}>
+            <button onClick={finish} style={{ display: 'block', margin: '14px auto 0', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: 'var(--c-aeaeb2)', fontWeight: 500 }}>
               Saltar guía
             </button>
           )}
@@ -193,11 +193,11 @@ function TutorialScreen({ onFinish }) {
       {tabIdx >= 0 && (
         <div style={{ position: 'fixed', bottom: 0, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 430, zIndex: 2, pointerEvents: 'none' }}>
           <div style={{ position: 'absolute', bottom: 70, left: `calc(${(tabIdx + 0.5) * 25}% - 12px)`, fontSize: 22, animation: 'bounce 0.9s infinite' }}>👇</div>
-          <div style={{ display: 'flex', background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(20px)', borderTop: '1px solid #e5e5ea', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+          <div style={{ display: 'flex', background: 'rgba(255,255,255,0.97)', backdropFilter: 'blur(20px)', borderTop: '1px solid var(--c-e5e5ea)', paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
             {TABS_NAV.map((t, i) => (
               <div key={t.id} style={{ flex: 1, padding: '10px 0 12px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, background: i === tabIdx ? `${current.color}15` : 'transparent', borderTop: i === tabIdx ? `2.5px solid ${current.color}` : '2.5px solid transparent', transition: 'all 0.2s' }}>
                 <span style={{ fontSize: 24 }}>{t.icon}</span>
-                <span style={{ fontSize: 10, fontWeight: i === tabIdx ? 700 : 400, color: i === tabIdx ? current.color : '#8e8e93' }}>{t.label}</span>
+                <span style={{ fontSize: 10, fontWeight: i === tabIdx ? 700 : 400, color: i === tabIdx ? current.color : 'var(--c-8e8e93)' }}>{t.label}</span>
               </div>
             ))}
           </div>

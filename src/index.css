@@ -1,11 +1,161 @@
+/* ── Tokens de color: claro / oscuro (sigue la preferencia del sistema) ── */
+:root {
+  --surface: #ffffff;
+  --nav-bg: rgb(255 255 255 / 0.92);
+  --c-f5f5f7: #f5f5f7;
+  --c-1c1c1e: #1c1c1e;
+  --c-3c3c43: #3c3c43;
+  --c-8e8e93: #8e8e93;
+  --c-636366: #636366;
+  --c-6b7280: #6b7280;
+  --c-aeaeb2: #aeaeb2;
+  --c-c7c7cc: #c7c7cc;
+  --c-e5e5ea: #e5e5ea;
+  --c-f2f2f7: #f2f2f7;
+  --c-f9f9fb: #f9f9fb;
+  --c-d1d5db: #d1d5db;
+  --c-e0e0f0: #e0e0f0;
+  --c-eef2ff: #eef2ff;
+  --c-f5f5ff: #f5f5ff;
+  --c-f5f3ff: #f5f3ff;
+  --c-c7d2fe: #c7d2fe;
+  --c-fff7ed: #fff7ed;
+  --c-fed7aa: #fed7aa;
+  --c-c2410c: #c2410c;
+  --c-9a3412: #9a3412;
+  --c-f0fdf4: #f0fdf4;
+  --c-dcfce7: #dcfce7;
+  --c-ecfdf5: #ecfdf5;
+  --c-a7f3d0: #a7f3d0;
+  --c-065f46: #065f46;
+  --c-166534: #166534;
+  --c-15803d: #15803d;
+  --c-047857: #047857;
+  --c-fffbeb: #fffbeb;
+  --c-92400e: #92400e;
+  --c-b45309: #b45309;
+  --c-fef2f2: #fef2f2;
+  --c-fff0f0: #fff0f0;
+  --c-fecaca: #fecaca;
+  --c-dc2626: #dc2626;
+  --c-f0f9ff: #f0f9ff;
+  --c-0369a1: #0369a1;
+  --c-0c4a6e: #0c4a6e;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: #1c1c1e;
+    --nav-bg: rgb(28 28 30 / 0.92);
+    --c-f5f5f7: #000000;
+    --c-1c1c1e: #f5f5f7;
+    --c-3c3c43: #d1d1d6;
+    --c-8e8e93: #98989f;
+    --c-636366: #aeaeb2;
+    --c-6b7280: #9ca3af;
+    --c-aeaeb2: #8e8e93;
+    --c-c7c7cc: #636366;
+    --c-e5e5ea: #38383a;
+    --c-f2f2f7: #2c2c2e;
+    --c-f9f9fb: #232325;
+    --c-d1d5db: #48484a;
+    --c-e0e0f0: #3a3a4a;
+    --c-eef2ff: #25254d;
+    --c-f5f5ff: #1f1f3a;
+    --c-f5f3ff: #241f3a;
+    --c-c7d2fe: #3f3f8a;
+    --c-fff7ed: #2e1f10;
+    --c-fed7aa: #5a3415;
+    --c-c2410c: #fdba74;
+    --c-9a3412: #fdba74;
+    --c-f0fdf4: #0f2a1c;
+    --c-dcfce7: #14532d;
+    --c-ecfdf5: #0f2a1c;
+    --c-a7f3d0: #166534;
+    --c-065f46: #6ee7b7;
+    --c-166534: #86efac;
+    --c-15803d: #4ade80;
+    --c-047857: #34d399;
+    --c-fffbeb: #2b2410;
+    --c-92400e: #fcd34d;
+    --c-b45309: #fbbf24;
+    --c-fef2f2: #3a1414;
+    --c-fff0f0: #3a1414;
+    --c-fecaca: #7f1d1d;
+    --c-dc2626: #f87171;
+    --c-f0f9ff: #0c2233;
+    --c-0369a1: #7dd3fc;
+    --c-0c4a6e: #bae6fd;
+  }
+}
+
+:root {
+  color-scheme: light dark;
+  accent-color: #6366f1;
+  --target-size: 24px;
+}
+@media (pointer: coarse) {
+  :root { --target-size: 44px; }
+}
+
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-html { font-size: 16px; }
+html {
+  font-size: 16px;
+  /* La barra de pestañas fija no tapa el elemento con foco */
+  scroll-padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+}
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
-  background: #f5f5f7;
-  color: #1c1c1e;
+  background: var(--c-f5f5f7);
+  color: var(--c-1c1c1e);
   overscroll-behavior: none;
+  overflow-wrap: break-word;
+  font-variant-numeric: tabular-nums;
 }
-input { outline: none; }
-button { font-family: inherit; }
+button, input, select, textarea { font-family: inherit; color: inherit; }
+img, video { max-inline-size: 100%; }
 ::-webkit-scrollbar { display: none; }
+
+/* Respuesta táctil inmediata y foco visible solo con teclado */
+:where(button) { transition: scale 120ms ease-out, opacity 120ms ease-out; }
+:where(button:not(:disabled)):active { scale: 0.97; }
+:where(button:disabled) { opacity: 0.55; }
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+}
+input:focus-visible, textarea:focus-visible, select:focus-visible { outline-offset: 0; }
+input::placeholder, textarea::placeholder { color: var(--c-aeaeb2); }
+
+/* Botones de solo icono: área táctil mínima sin agrandar el icono */
+.icon-btn { position: relative; min-inline-size: var(--target-size); min-block-size: var(--target-size); }
+
+/* Diálogos nativos (<dialog>): hoja inferior en móvil */
+dialog.sheet {
+  margin: auto auto 0;
+  inline-size: min(100%, 430px);
+  max-inline-size: 100%;
+  max-block-size: 88dvh;
+  border: none;
+  border-radius: 22px 22px 0 0;
+  padding: 20px 18px calc(20px + env(safe-area-inset-bottom, 0px));
+  background: var(--surface);
+  color: var(--c-1c1c1e);
+  overflow-y: auto;
+}
+dialog.sheet:modal { overscroll-behavior: contain; }
+dialog.sheet::backdrop {
+  background: rgb(0 0 0 / 0.45);
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+@media (prefers-reduced-motion: no-preference) {
+  dialog.sheet[open] { animation: sheet-in 260ms cubic-bezier(.2,.8,.2,1) both; }
+  dialog.sheet[open]::backdrop { animation: fade-in 200ms ease-out both; }
+  .tab-panel { animation: fade-in 180ms ease-out both; }
+}
+@keyframes sheet-in { from { translate: 0 100%; } }
+@keyframes fade-in { from { opacity: 0; } }
+
+/* Chips con desplazamiento horizontal que encajan al deslizar */
+.chips { display: flex; gap: 6px; overflow-x: auto; scroll-snap-type: x proximity; padding-bottom: 10px; }
+.chips > * { scroll-snap-align: start; }

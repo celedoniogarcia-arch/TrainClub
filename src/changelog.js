@@ -46,4 +46,17 @@ export const CHANGELOG = {
       { icon: '💾', texto: 'Los cambios de ejercicio ya no se pierden al cerrar la app, así que cada uno muestra su propio récord' },
     ],
   },
+  5: {
+    titulo: '¡TrainClub se actualiza!',
+    subtitulo: 'Más ejercicios y herramientas de gimnasio',
+    tipo: 'update',
+    novedades: [
+      { icon: '📈', texto: 'Gráfica de evolución de cada ejercicio (1RM, peso máximo y volumen) en Marcas' },
+      { icon: '🧮', texto: 'Calculadora de discos por lado y series de calentamiento' },
+      { icon: '🎯', texto: 'Apunta el esfuerzo (RPE) de cada serie y notas por ejercicio' },
+      { icon: '🏁', texto: 'Resumen al terminar el entreno con duración, volumen y récords, listo para compartir' },
+      { icon: '🏋️', texto: '49 ejercicios nuevos con su GIF (159 en total), incluidos antebrazo y cardio' },
+      { icon: '🌙', texto: 'Modo oscuro automático según el ajuste del móvil' },
+    ],
+  },
 }
