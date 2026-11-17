@@ -354,6 +354,9 @@ export default function App() {
   const [calStart, setCalStart] = useState(() => startOfDay(new Date()))
   const [ejAbierto, setEjAbierto] = useState(null)
   const [altAbierta, setAltAbierta] = useState(null)
+  const [busquedaEj, setBusquedaEj] = useState('')
+  const [grupoEj, setGrupoEj] = useState('Todos')
+  const [marcaAbierta, setMarcaAbierta] = useState(null)
   const [mostrarPreparados, setMostrarPreparados] = useState(false)
   const [filtroServicio, setFiltroServicio] = useState('Todos')
   const [ud, setUdState] = useState({})
@@ -599,6 +602,33 @@ export default function App() {
 
   // ── Registros ──
   const registros = ud.registros || {}
+  // Sesiones excluidas de las marcas (reseteo de PR por ejercicio). El
+  // historial no se borra: sigue visible en la pestaña Marcas y se puede restaurar.
+  const marcasReset = ud.marcasReset || {}
+  const registrosPR = useMemo(() => {
+    const out = { ...registros }
+    for (const [id, fechas] of Object.entries(marcasReset)) {
+      if (!out[id]) continue
+      const ocultas = new Set(fechas)
+      out[id] = Object.fromEntries(Object.entries(out[id]).filter(([f]) => !ocultas.has(f)))
+    }
+    return out
+  }, [ud.registros, ud.marcasReset])
+  function resetearMarcas(id) {
+    setUd(prev => ({ ...prev, marcasReset: { ...(prev.marcasReset || {}), [id]: Object.keys(prev.registros?.[id] || {}) } }))
+  }
+  function restaurarMarcas(id) {
+    setUd(prev => { const m = { ...(prev.marcasReset || {}) }; delete m[id]; return { ...prev, marcasReset: m } })
+  }
+  function borrarSesion(id, fecha) {
+    setUd(prev => {
+      const ej = { ...(prev.registros?.[id] || {}) }
+      delete ej[fecha]
+      const regs = { ...(prev.registros || {}) }
+      if (Object.keys(ej).length) regs[id] = ej; else delete regs[id]
+      return { ...prev, registros: regs }
+    })
+  }
   // Las series se guardan en la FECHA SELECCIONADA (antes siempre en "hoy",
   // aunque estuvieras viendo otro día) y bajo el id del ejercicio realizado.
   function getSesion(regId, f = fechaSel) {
@@ -645,7 +675,7 @@ export default function App() {
     setUd({ ...ud, registros: r })
   }
   function etiquetaPR(ej) {
-    const pr = calcularPRs(registros[ej.regId], ej.metrica)
+    const pr = calcularPRs(registrosPR[ej.regId], ej.metrica)
     if (ej.metrica === 'seg') return pr.maxSeg ? `🏆 ${pr.maxSeg}s` : null
     if (ej.metrica === 'reps') return pr.maxReps ? `🏆 ${pr.maxReps} reps${pr.maxKg ? ` · +${pr.maxKg}kg` : ''}` : null
     if (!pr.maxKg) return null
@@ -686,7 +716,7 @@ export default function App() {
     const snapshot = {}
     const visiblesHoy = construirDiasVisibles(DIAS, { alternativas: alternativasActivas, fecha: new Date(), objetivo: user?.objetivo, bloqueInicio: ud.bloqueInicio })
     visiblesHoy.forEach(d => d.ejercicios.forEach(ej => {
-      const pr = calcularPRs(registros[ej.regId], ej.metrica)
+      const pr = calcularPRs(registrosPR[ej.regId], ej.metrica)
       const max = ej.metrica === 'seg' ? pr.maxSeg : ej.metrica === 'reps' ? pr.maxReps : pr.maxKg
       const tipo = ej.metrica === 'seg' ? 'tiempo' : ej.metrica === 'reps' ? 'reps' : 'peso'
       if (max) { if (!snapshot[d.id]) snapshot[d.id] = {}; snapshot[d.id][ej.regId] = { nombre: ej.nombre, max, tipo, e1rm: pr.maxE1RM || null } }
@@ -794,14 +824,14 @@ export default function App() {
     objetivo: user?.objetivo || 'recomposicion',
     nivel: user?.nivel || 'intermedio',
     semanasCiclo,
-    registros: ud.registros || {},
+    registros: registrosPR,
     histPeso: ud.histPeso || [],
     actividades: ud.actividades || [],
     DIAS: DIAS_VIS,
     perfilFisico: calcularPerfilFisico(dietaData || {}),
     sexo: dietaData?.sexo || null,
     hoy: fechaSel,
-  }), [user?.objetivo, user?.nivel, semanasCiclo, ud.registros, ud.histPeso, ud.actividades, DIAS_VIS, fechaSel, dietaData?.edad, dietaData?.pesoActual, dietaData?.altura, dietaData?.sexo])
+  }), [user?.objetivo, user?.nivel, semanasCiclo, registrosPR, ud.histPeso, ud.actividades, DIAS_VIS, fechaSel, dietaData?.edad, dietaData?.pesoActual, dietaData?.altura, dietaData?.sexo])
   const cicloCompletado = semanasCiclo >= cicloInfo.semanas
   function cambiarCiclo(id) { updateUser({ cicloActual: id, cicloSemanaInicio: getWeekKey() }); setMostrarCiclos(false); setEjAbierto(null) }
 
@@ -866,6 +896,7 @@ export default function App() {
     { id: 'entreno', icon: '🏋️', label: 'Entreno' },
     { id: 'datos', icon: '📊', label: 'Datos' },
     { id: 'dieta', icon: '🥗', label: 'Dieta' },
+    { id: 'marcas', icon: '🏆', label: 'Marcas' },
     { id: 'progreso', icon: '📈', label: 'Progreso' },
   ]
 
@@ -876,12 +907,12 @@ export default function App() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
             <div style={{ fontSize: 22, fontWeight: 800, color: '#1c1c1e', letterSpacing: -0.5 }}>
-              {tab === 'entreno' ? '🏋️ Entreno' : tab === 'datos' ? '📊 Mis datos' : tab === 'dieta' ? '🥗 Nutrición' : '📈 Progreso'}
+              {tab === 'entreno' ? '🏋️ Entreno' : tab === 'datos' ? '📊 Mis datos' : tab === 'dieta' ? '🥗 Nutrición' : tab === 'marcas' ? '🏆 Marcas' : '📈 Progreso'}
             </div>
             <div style={{ fontSize: 13, color: '#8e8e93', marginTop: 3 }}>
               {tab === 'entreno' ? `Rutina ${DIAS.length} días · ${OBJETIVOS.find(o => o.id === user?.objetivo)?.nombre || 'Recomposición'}` :
                tab === 'datos' ? 'Perfil físico y seguimiento de peso' :
-               tab === 'dieta' ? 'Plan personalizado de alimentación' : 'Historial y evolución semanal'}
+               tab === 'dieta' ? 'Plan personalizado de alimentación' : tab === 'marcas' ? 'Catálogo de ejercicios y récords' : 'Historial y evolución semanal'}
             </div>
           </div>
           <button onClick={() => setUserId(null)}
@@ -1074,7 +1105,7 @@ export default function App() {
               let series = 0, vol = 0, prsHoy = 0
               dia.ejercicios.forEach(ej => {
                 const ses = getSesion(ej.regId)
-                const prPrev = calcularPRs(registros[ej.regId], ej.metrica, { excluir: fechaSel })
+                const prPrev = calcularPRs(registrosPR[ej.regId], ej.metrica, { excluir: fechaSel })
                 const ss = seriesSesion(ses, ej.metrica)
                 series += ss.filter(x => x.ok).length
                 vol += volumenSesion(ses, ej.metrica)
@@ -1103,7 +1134,7 @@ export default function App() {
               const esRotacion = ej.motivo === 'rotacion'
               const sesion = getSesion(ej.regId)
               const hechas = seriesSesion(sesion, ej.metrica).filter(x => x.ok).length
-              const prPrevio = calcularPRs(registros[ej.regId], ej.metrica, { excluir: fechaSel })
+              const prPrevio = calcularPRs(registrosPR[ej.regId], ej.metrica, { excluir: fechaSel })
               const etiquetaMax = etiquetaPR(ej)
               const esDeload = String(ej.reps).includes('deload') || cicloActual === 'deload'
               const ocupados = dia.ejercicios.map(e => e.regId)
@@ -1646,6 +1677,102 @@ export default function App() {
         )}
 
         {/* ══════════ PROGRESO ══════════ */}
+        {tab === 'marcas' && (() => {
+          // Catálogo completo + ejercicios con registros que no estén en él
+          const planInfo = {}
+          DIAS.forEach(d => d.ejercicios.forEach(e => { planInfo[e.id] = { id: e.id, nombre: e.nombre, grupo: e.grupo || 'Otros', metrica: e.metrica, gif: e.gif } }))
+          const lista = [...Object.values(CATALOGO)]
+          Object.keys(registros).forEach(id => { if (!CATALOGO[id]) lista.push(planInfo[id] || { id, nombre: id, grupo: 'Otros', metrica: 'kg_reps' }) })
+          const grupos = ['Todos', ...Array.from(new Set(lista.map(e => e.grupo)))]
+          const q = busquedaEj.trim().toLowerCase()
+          const filas = lista
+            .filter(e => (grupoEj === 'Todos' || e.grupo === grupoEj) && (!q || e.nombre.toLowerCase().includes(q)))
+            .map(e => ({ ...e, nSes: historialOrdenado(registros[e.id]).length }))
+            .sort((a, b) => (b.nSes > 0) - (a.nSes > 0) || a.nombre.localeCompare(b.nombre, 'es'))
+          const conDatos = filas.filter(e => e.nSes > 0).length
+          return (
+            <div style={{ padding: '16px 16px 0' }}>
+              <input value={busquedaEj} onChange={e => setBusquedaEj(e.target.value)} placeholder="🔍 Buscar ejercicio" style={{ ...S.input, marginBottom: 10 }} />
+              <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 10, marginBottom: 4 }}>
+                {grupos.map(g => <button key={g} onClick={() => setGrupoEj(g)} style={S.btnPill(grupoEj === g, '#6366f1')}>{g}</button>)}
+              </div>
+              <div style={{ fontSize: 12, color: '#8e8e93', marginBottom: 10 }}>
+                {filas.length} ejercicios · {conDatos} con registros. Toca uno para ver su historial, borrar sesiones erróneas o resetear sus marcas.
+              </div>
+              {filas.map(e => {
+                const abierto = marcaAbierta === e.id
+                const reset = !!marcasReset[e.id]
+                const pr = calcularPRs(registrosPR[e.id], e.metrica)
+                const etiqueta = etiquetaPR({ ...e, regId: e.id })
+                const hist = historialOrdenado(registros[e.id]).slice().reverse()
+                const ocultas = new Set(marcasReset[e.id] || [])
+                return (
+                  <div key={e.id} style={{ ...S.card, padding: 0 }}>
+                    <button onClick={() => setMarcaAbierta(abierto ? null : e.id)}
+                      style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+                      {e.gif ? <img src={e.gif} alt="" loading="lazy" style={{ width: 48, height: 48, borderRadius: 10, objectFit: 'cover', background: '#f5f5f7', flexShrink: 0 }} />
+                        : <div style={{ width: 48, height: 48, borderRadius: 10, background: '#f5f5f7', flexShrink: 0 }} />}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: '#1c1c1e' }}>{e.nombre}</div>
+                        <div style={{ fontSize: 12, color: etiqueta ? '#b45309' : '#8e8e93', marginTop: 2 }}>
+                          {etiqueta || (reset && e.nSes ? 'Marcas reseteadas' : 'Sin marcas')}
+                          <span style={{ color: '#8e8e93' }}> · {e.grupo}{e.nSes ? ` · ${e.nSes} ses.` : ''}</span>
+                        </div>
+                      </div>
+                      <span style={{ color: '#c7c7cc', fontSize: 14 }}>{abierto ? '▲' : '▼'}</span>
+                    </button>
+                    {abierto && (
+                      <div style={{ padding: '0 14px 14px', borderTop: '1px solid #f2f2f7' }}>
+                        {e.gif && <img src={e.gif} alt={e.nombre} loading="lazy" style={{ width: '100%', maxHeight: 220, objectFit: 'contain', borderRadius: 12, background: '#f5f5f7', margin: '12px 0' }} />}
+                        {e.metrica === 'kg_reps' && pr.maxKg > 0 && (
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, textAlign: 'center', marginBottom: 12 }}>
+                            <div><div style={{ fontSize: 17, fontWeight: 800 }}>{pr.maxKg}kg</div><div style={{ fontSize: 11, color: '#8e8e93' }}>peso máx.</div></div>
+                            <div><div style={{ fontSize: 17, fontWeight: 800 }}>{Math.round(pr.maxE1RM)}kg</div><div style={{ fontSize: 11, color: '#8e8e93' }}>1RM estimado</div></div>
+                            <div><div style={{ fontSize: 17, fontWeight: 800 }}>{pr.maxVolumenSesion >= 1000 ? `${(pr.maxVolumenSesion / 1000).toFixed(1)}t` : `${Math.round(pr.maxVolumenSesion)}kg`}</div><div style={{ fontSize: 11, color: '#8e8e93' }}>volumen máx.</div></div>
+                          </div>
+                        )}
+                        {hist.length === 0 && <div style={{ fontSize: 13, color: '#8e8e93', padding: '8px 0' }}>Aún no has registrado este ejercicio.</div>}
+                        {hist.map(([f, ses]) => {
+                          const mejor = mejorSerie(ses, e.metrica)
+                          const n = seriesSesion(ses, e.metrica).length
+                          return (
+                            <div key={f} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid #f2f2f7', opacity: ocultas.has(f) ? 0.45 : 1 }}>
+                              <div style={{ width: 82, fontSize: 12, color: '#8e8e93' }}>{f}</div>
+                              <div style={{ flex: 1, fontSize: 13, color: '#1c1c1e' }}>
+                                {formatSerie(mejor, e.metrica)} <span style={{ color: '#8e8e93', fontSize: 12 }}>· {n} {n === 1 ? 'serie' : 'series'}</span>
+                                {ocultas.has(f) && <span style={{ color: '#8e8e93', fontSize: 11 }}> · no cuenta</span>}
+                              </div>
+                              <button aria-label={`Borrar sesión del ${f}`}
+                                onClick={() => { if (window.confirm(`¿Borrar la sesión del ${f} de ${e.nombre}? No se puede deshacer.`)) borrarSesion(e.id, f) }}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, padding: 4 }}>🗑</button>
+                            </div>
+                          )
+                        })}
+                        {hist.length > 0 && (
+                          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                            {!reset || hist.some(([f]) => !ocultas.has(f)) ? (
+                              <button onClick={() => { if (window.confirm(`¿Resetear las marcas de ${e.nombre}? Tu historial se conserva, pero las sesiones actuales dejarán de contar para récords y sugerencias.`)) resetearMarcas(e.id) }}
+                                style={{ flex: 1, padding: 12, borderRadius: 12, border: '1px solid #fecaca', background: '#fef2f2', color: '#dc2626', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                                ↺ Resetear marcas
+                              </button>
+                            ) : null}
+                            {reset && (
+                              <button onClick={() => restaurarMarcas(e.id)}
+                                style={{ flex: 1, padding: 12, borderRadius: 12, border: '1px solid #e5e5ea', background: '#fff', color: '#6366f1', fontWeight: 700, fontSize: 13, cursor: 'pointer' }}>
+                                Restaurar marcas
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })()}
+
         {tab === 'progreso' && (
           <>
             {/* Panel de reglas — Análisis personalizado */}

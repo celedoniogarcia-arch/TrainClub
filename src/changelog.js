@@ -36,4 +36,14 @@ export const CHANGELOG = {
       { icon: '🖼️', texto: 'Imágenes revisadas: cada ejercicio muestra su movimiento correcto' },
     ],
   },
+  4: {
+    titulo: '¡TrainClub se actualiza!',
+    subtitulo: 'Nueva pestaña Marcas',
+    tipo: 'update',
+    novedades: [
+      { icon: '🏆', texto: 'Pestaña Marcas: catálogo de ejercicios con tus récords e historial de cada uno' },
+      { icon: '↺', texto: 'Resetea las marcas de un ejercicio o borra sesiones mal apuntadas' },
+      { icon: '💾', texto: 'Los cambios de ejercicio ya no se pierden al cerrar la app, así que cada uno muestra su propio récord' },
+    ],
+  },
 }

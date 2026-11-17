@@ -1,5 +1,8 @@
 import { supabase } from './supabase.js'
 
+// Clave reservada dentro de rg_user_data.registros para el resto de datos de la app
+const APP_KEY = '_app'
+
 // ─── PERFILES ────────────────────────────────────────────────────────────────
 
 function rowToProfile(row) {
@@ -83,21 +86,34 @@ export async function getUserData(profileId) {
   const { data, error } = await supabase
     .from('rg_user_data').select('*').eq('profile_id', profileId).maybeSingle()
   if (error || !data) return {}
+  // El resto de campos (alternativas elegidas, bloque de rotación, medidas,
+  // actividades, marcas reseteadas…) viajan dentro de registros._app porque la
+  // tabla solo tiene tres columnas. Antes se perdían al recargar.
+  const { [APP_KEY]: extraNube, ...registros } = data.registros || {}
+  // Primera carga tras el arreglo: se recupera lo que quedó en la caché local
+  let extra = extraNube
+  if (!extra) {
+    const { registros: _r, histPeso: _h, progSemanal: _p, ...local } = JSON.parse(localStorage.getItem('rg_data') || '{}')[profileId] || {}
+    extra = local
+  }
   return {
-    registros:   data.registros   || {},
+    ...extra,
+    registros,
     histPeso:    data.hist_peso   || [],
     progSemanal: data.prog_semanal || {},
   }
 }
+
 
 export async function saveUserData(profileId, ud) {
   // Siempre guarda en local como caché
   const all = JSON.parse(localStorage.getItem('rg_data') || '{}')
   localStorage.setItem('rg_data', JSON.stringify({ ...all, [profileId]: ud }))
   if (!supabase) return
+  const { registros = {}, histPeso, progSemanal, ...extra } = ud
   await supabase.from('rg_user_data').upsert({
     profile_id:   profileId,
-    registros:    ud.registros   || {},
+    registros:    { ...registros, [APP_KEY]: extra },
     hist_peso:    ud.histPeso    || [],
     prog_semanal: ud.progSemanal || {},
     updated_at:   new Date().toISOString(),
